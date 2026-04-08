@@ -1,5 +1,6 @@
 faiss-cpu>=1.8.0,<2
+huggingface-hub>=0.20.0
 numpy>=1.26.0,<2
+onnxruntime>=1.18.0
 pypdf>=4.2.0
-sentence-transformers==3.0.1
 transformers>=4.41.0,<5

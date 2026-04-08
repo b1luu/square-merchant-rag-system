@@ -7,11 +7,14 @@ from pathlib import Path
 
 import faiss
 import numpy as np
+import onnxruntime as ort
+from huggingface_hub import snapshot_download
 from pypdf import PdfReader
-from sentence_transformers import SentenceTransformer
+from transformers import AutoTokenizer
 
 MODEL_NAME = "BAAI/bge-base-en-v1.5"
 QUERY_INSTRUCTION = "Represent this sentence for searching relevant passages: "
+DEFAULT_ONNX_FILE = "onnx/model.onnx"
 
 
 @dataclass
@@ -52,6 +55,8 @@ def read_pdf_chunks(
             chunk_text = " ".join(words[start:end]).strip()
 
             if len(chunk_text) >= min_chunk_chars:
+                # Retrieval quality depends heavily on chunk granularity:
+                # chunks that are too large mix unrelated facts together.
                 chunks.append(
                     Chunk(
                         chunk_id=len(chunks),
@@ -72,44 +77,80 @@ def read_pdf_chunks(
     return chunks
 
 
+class BGEOnnxEncoder:
+    def __init__(self, model_name: str, onnx_file: str = DEFAULT_ONNX_FILE) -> None:
+        # Pull only the files needed for tokenization + ONNX inference and let
+        # the Hugging Face cache handle reuse across runs.
+        local_dir = snapshot_download(model_name, allow_patterns=[onnx_file, "*.json", "*.txt", "vocab.txt"])
+        onnx_path = Path(local_dir) / onnx_file
+        if not onnx_path.exists():
+            raise FileNotFoundError(f"ONNX model file not found: {onnx_path}")
+
+        self.tokenizer = AutoTokenizer.from_pretrained(local_dir)
+        self.session = ort.InferenceSession(str(onnx_path), providers=["CPUExecutionProvider"])
+
+    def encode(self, texts: list[str], batch_size: int = 32, max_length: int = 512) -> np.ndarray:
+        embeddings: list[np.ndarray] = []
+
+        for start in range(0, len(texts), batch_size):
+            batch = texts[start : start + batch_size]
+            encoded = self.tokenizer(
+                batch,
+                padding=True,
+                truncation=True,
+                max_length=max_length,
+                return_tensors="np",
+            )
+
+            ort_inputs = {
+                "input_ids": encoded["input_ids"].astype(np.int64),
+                "attention_mask": encoded["attention_mask"].astype(np.int64),
+            }
+            if "token_type_ids" in encoded:
+                ort_inputs["token_type_ids"] = encoded["token_type_ids"].astype(np.int64)
+
+            last_hidden_state = self.session.run(None, ort_inputs)[0]
+            # The BGE model card's reference code uses CLS pooling, so we take
+            # the embedding at position 0 for each sequence.
+            cls_embeddings = last_hidden_state[:, 0, :]
+            # Normalize so FAISS inner-product search behaves like cosine search.
+            norms = np.linalg.norm(cls_embeddings, axis=1, keepdims=True)
+            norms = np.clip(norms, a_min=1e-12, a_max=None)
+            embeddings.append((cls_embeddings / norms).astype(np.float32))
+
+        return np.vstack(embeddings)
+
+
 def build_faiss_index(
     chunks: list[Chunk],
     model_name: str,
-) -> tuple[SentenceTransformer, faiss.IndexFlatIP, np.ndarray]:
-    model = SentenceTransformer(model_name)
+) -> tuple[BGEOnnxEncoder, faiss.IndexFlatIP, np.ndarray]:
+    encoder = BGEOnnxEncoder(model_name)
     chunk_texts = [chunk.text for chunk in chunks]
-    embeddings = model.encode(
-        chunk_texts,
-        batch_size=32,
-        normalize_embeddings=True,
-        convert_to_numpy=True,
-        show_progress_bar=True,
-    )
+    embeddings = encoder.encode(chunk_texts, batch_size=32)
 
-    embeddings = np.asarray(embeddings, dtype=np.float32)
+    # IndexFlatIP is exact inner-product search. With normalized vectors, this
+    # is a simple way to rank by cosine similarity.
     index = faiss.IndexFlatIP(embeddings.shape[1])
     index.add(embeddings)
-    return model, index, embeddings
+    return encoder, index, embeddings
 
 
 def format_query(query: str, use_instruction: bool) -> str:
+    # BGE recommends adding this instruction to retrieval queries, but not to
+    # the document passages.
     return f"{QUERY_INSTRUCTION}{query}" if use_instruction else query
 
 
 def retrieve(
-    model: SentenceTransformer,
+    encoder: BGEOnnxEncoder,
     index: faiss.IndexFlatIP,
     chunks: list[Chunk],
     query: str,
     top_k: int,
     use_instruction: bool,
 ) -> list[tuple[float, Chunk]]:
-    query_embedding = model.encode(
-        [format_query(query, use_instruction)],
-        normalize_embeddings=True,
-        convert_to_numpy=True,
-    )
-    query_embedding = np.asarray(query_embedding, dtype=np.float32)
+    query_embedding = encoder.encode([format_query(query, use_instruction)])
 
     top_k = min(top_k, len(chunks))
     scores, indices = index.search(query_embedding, top_k)
@@ -123,7 +164,7 @@ def retrieve(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Retrieve the most relevant chunks from a PDF with BGE + FAISS."
+        description="Retrieve the most relevant chunks from a PDF with BGE ONNX + FAISS."
     )
     parser.add_argument("pdf_path", type=Path, help="Path to the PDF file")
     parser.add_argument("query", help="Question to search for in the PDF")
@@ -171,11 +212,11 @@ def main() -> None:
     )
 
     print(f"Loaded {len(chunks)} chunks from {args.pdf_path}")
-    print(f"Embedding with {args.model_name}")
+    print(f"Embedding with {args.model_name} using direct ONNX runtime")
 
-    model, index, _ = build_faiss_index(chunks=chunks, model_name=args.model_name)
+    encoder, index, _ = build_faiss_index(chunks=chunks, model_name=args.model_name)
     results = retrieve(
-        model=model,
+        encoder=encoder,
         index=index,
         chunks=chunks,
         query=args.query,

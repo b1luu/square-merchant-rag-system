@@ -58,4 +58,5 @@ python retrieve_pdf.py path/to/document.pdf "What is the return policy?" --raw-q
 
 - `pypdf` extracts embedded text. If your PDF is scanned images, you need OCR first.
 - FAISS is built in memory in this version. You can save/load the index later once you move beyond level 1.
-- `BAAI/bge-base-en-v1.5` will download from Hugging Face the first time you run the script.
+- `BAAI/bge-base-en-v1.5` and its `onnx/model.onnx` file will download from Hugging Face the first time you run the script.
+- This version uses `onnxruntime` directly instead of the local `sentence-transformers` / `torch` runtime because that stack was unstable on this Intel macOS environment.
