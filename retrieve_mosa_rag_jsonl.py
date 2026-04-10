@@ -1,135 +1,63 @@
 #!/usr/bin/env python3
-"""
-Semantic search over normalized_mosa_rag.jsonl using the same BGE ONNX + FAISS stack as retrieve_pdf.py.
-
-Example:
-  python retrieve_mosa_rag_jsonl.py "How do I make boba in the rice cooker?"
-  python retrieve_mosa_rag_jsonl.py "Square POS passcode" --top-k 5
-"""
-
+"""Search normalized_mosa_rag.jsonl with BGE ONNX + FAISS (same as retrieve_pdf.py)."""
 from __future__ import annotations
 
 import argparse
 import json
+import sys
 import textwrap
 from pathlib import Path
 
 from retrieve_pdf import MODEL_NAME, Chunk, build_faiss_index, retrieve
 
 
-def load_records(path: Path) -> list[dict]:
+def main() -> None:
+    p = argparse.ArgumentParser(description="Search normalized_mosa_rag.jsonl with BGE + FAISS.")
+    p.add_argument("query")
+    p.add_argument("--jsonl", type=Path, default=Path("normalized_mosa_rag.jsonl"))
+    p.add_argument("--model-name", default=MODEL_NAME)
+    p.add_argument("--top-k", type=int, default=5)
+    p.add_argument("--raw-query", action="store_true", help="Omit BGE query instruction prefix")
+    a = p.parse_args()
+    if not a.jsonl.is_file():
+        sys.exit(f"error: corpus file not found: {a.jsonl}")
+
     rows: list[dict] = []
-    for line in path.read_text(encoding="utf-8").splitlines():
+    for n, line in enumerate(a.jsonl.read_text(encoding="utf-8").splitlines(), 1):
         line = line.strip()
         if not line:
             continue
-        rows.append(json.loads(line))
-    return rows
-
-
-def records_to_chunks(records: list[dict], jsonl_path: Path) -> list[Chunk]:
-    chunks: list[Chunk] = []
-    for rec in records:
-        text = (rec.get("retrieval_text") or "").strip()
-        if not text:
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError as e:
+            print(f"warning: line {n}: invalid JSON ({e})", file=sys.stderr)
             continue
-        chunks.append(
-            Chunk(
-                chunk_id=len(chunks),
-                source_name=str(rec.get("source_file", "")),
-                source_path=str(jsonl_path),
-                page_number=int(rec.get("source_page") or 0),
-                text=text,
-            )
-        )
-    if not chunks:
-        raise ValueError("No non-empty retrieval_text entries in JSONL.")
-    return chunks
-
-
-def attach_meta(chunks: list[Chunk], records: list[dict]) -> dict[int, dict]:
-    """Map chunk_id -> full record for display (ids may skip if retrieval_text empty)."""
-    meta: dict[int, dict] = {}
-    chunk_i = 0
-    for rec in records:
         if not (rec.get("retrieval_text") or "").strip():
+            print(f"warning: line {n}: empty retrieval_text, skipped", file=sys.stderr)
             continue
-        meta[chunk_i] = rec
-        chunk_i += 1
-    return meta
+        rows.append(rec)
 
+    if not rows:
+        sys.exit("error: no searchable records with non-empty retrieval_text")
 
-def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Search the normalized Mosa RAG JSONL corpus with BGE + FAISS."
-    )
-    parser.add_argument(
-        "query",
-        help="Natural-language question or keywords",
-    )
-    parser.add_argument(
-        "--jsonl",
-        type=Path,
-        default=Path("normalized_mosa_rag.jsonl"),
-        help="Path to normalized_mosa_rag.jsonl (default: ./normalized_mosa_rag.jsonl)",
-    )
-    parser.add_argument(
-        "--model-name",
-        default=MODEL_NAME,
-        help=f"BGE model id (default: {MODEL_NAME})",
-    )
-    parser.add_argument(
-        "--top-k",
-        type=int,
-        default=5,
-        help="Number of records to return (default: 5)",
-    )
-    parser.add_argument(
-        "--raw-query",
-        action="store_true",
-        help="Do not prepend the BGE retrieval instruction to the query",
-    )
-    args = parser.parse_args()
-
-    if not args.jsonl.is_file():
-        raise SystemExit(
-            f"JSONL not found: {args.jsonl}\n"
-            "Build it first: python -m mosa_rag.build_corpus --data-dir data --out normalized_mosa_rag.jsonl"
+    chunks: list[Chunk] = []
+    for i, rec in enumerate(rows):
+        t = (rec.get("retrieval_text") or "").strip()
+        chunks.append(
+            Chunk(i, str(rec.get("source_file", "")), str(a.jsonl.resolve()), int(rec.get("source_page") or 0), t)
         )
 
-    records = load_records(args.jsonl)
-    chunks = records_to_chunks(records, args.jsonl)
-    meta = attach_meta(chunks, records)
-
-    print(f"Loaded {len(chunks)} records from {args.jsonl}")
-    print(f"Embedding with {args.model_name} (ONNX) …")
-
-    encoder, index, _ = build_faiss_index(chunks=chunks, model_name=args.model_name)
-    results = retrieve(
-        encoder=encoder,
-        index=index,
-        chunks=chunks,
-        query=args.query,
-        top_k=min(args.top_k, len(chunks)),
-        use_instruction=not args.raw_query,
-    )
-
-    print(f"\nQuery: {args.query}\nTop {len(results)} matches:\n")
-
-    for rank, (score, chunk) in enumerate(results, start=1):
-        rec = meta.get(chunk.chunk_id, {})
-        rid = rec.get("id", "?")
-        rtype = rec.get("type", "?")
-        title = rec.get("title", "?")
-        print("=" * 100)
-        print(
-            f"Rank {rank} | score={score:.4f} | id={rid} | type={rtype}\n"
-            f"Title: {title}\n"
-            f"Source: {chunk.source_name} | page={chunk.page_number}"
-        )
-        print("-" * 100)
-        print(textwrap.fill(chunk.text, width=100))
-        print()
+    print(f"Indexed {len(chunks)} records from {a.jsonl} | model {a.model_name}")
+    enc, index, _ = build_faiss_index(chunks=chunks, model_name=a.model_name)
+    for rank, (score, ch) in enumerate(
+        retrieve(enc, index, chunks, a.query, min(a.top_k, len(chunks)), not a.raw_query), 1
+    ):
+        r = rows[ch.chunk_id]
+        print("=" * 96, f"\nrank={rank} score={score:.4f}", sep="")
+        print(f"id={r.get('id','')} type={r.get('type','')} title={r.get('title','')}")
+        print(f"source_file={r.get('source_file','')} source_page={r.get('source_page','')}")
+        print("-" * 96)
+        print(textwrap.fill(str(r.get("retrieval_text", "")), width=96), "\n", sep="")
 
 
 if __name__ == "__main__":
