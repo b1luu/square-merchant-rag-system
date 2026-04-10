@@ -28,6 +28,8 @@ Default output is the top 3 chunks:
 python retrieve_pdf.py path/to/document.pdf "What does this PDF say about pricing?"
 ```
 
+The current defaults are tuned for the handbook and use `--chunk-size 80 --chunk-overlap 30`.
+
 If you want the top 5 instead:
 
 ```bash
@@ -38,6 +40,18 @@ You can also tune chunking:
 
 ```bash
 python retrieve_pdf.py path/to/document.pdf "Summarize the refund policy" --chunk-size 300 --chunk-overlap 75
+```
+
+You can compare chunk settings against the handbook with:
+
+```bash
+python evaluate_retrieval.py --pdf-path "data/Mosa Employee Handbook.pdf"
+```
+
+Or sweep a smaller custom grid:
+
+```bash
+python evaluate_retrieval.py --pdf-path "data/Mosa Employee Handbook.pdf" --chunk-sizes 60,80,100 --chunk-overlaps 10,20
 ```
 
 ## Why the query instruction is used

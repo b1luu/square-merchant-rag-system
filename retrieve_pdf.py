@@ -175,14 +175,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--chunk-size",
         type=int,
-        default=250,
-        help="Chunk size in words (default: 250)",
+        default=80,
+        help="Chunk size in words (default: 80)",
     )
     parser.add_argument(
         "--chunk-overlap",
         type=int,
-        default=50,
-        help="Chunk overlap in words (default: 50)",
+        default=30,
+        help="Chunk overlap in words (default: 30)",
     )
     parser.add_argument(
         "--top-k",
