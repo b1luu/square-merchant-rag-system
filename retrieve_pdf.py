@@ -27,7 +27,6 @@ class Chunk:
 def normalize_whitespace(text: str) -> str:
     return " ".join(text.split())
 
-
 def read_pdf_chunks(
     pdf_path: Path,
     chunk_size: int,
