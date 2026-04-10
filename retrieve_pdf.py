@@ -20,12 +20,29 @@ DEFAULT_ONNX_FILE = "onnx/model.onnx"
 @dataclass
 class Chunk:
     chunk_id: int
+    source_name: str
+    source_path: str
     page_number: int
     text: str
 
 
 def normalize_whitespace(text: str) -> str:
     return " ".join(text.split())
+
+def resolve_pdf_paths(path: Path) -> list[Path]:
+    if path.is_file():
+        if path.suffix.lower() != ".pdf":
+            raise ValueError(f"Expected a PDF file, got: {path}")
+        return [path]
+
+    if path.is_dir():
+        pdf_paths = sorted(candidate for candidate in path.glob("*.pdf") if candidate.is_file())
+        if not pdf_paths:
+            raise ValueError(f"No PDF files found in directory: {path}")
+        return pdf_paths
+
+    raise FileNotFoundError(f"PDF path not found: {path}")
+
 
 def read_pdf_chunks(
     pdf_path: Path,
@@ -36,36 +53,40 @@ def read_pdf_chunks(
     if chunk_overlap >= chunk_size:
         raise ValueError("chunk_overlap must be smaller than chunk_size")
 
-    reader = PdfReader(str(pdf_path))
     chunks: list[Chunk] = []
     step = chunk_size - chunk_overlap
 
-    for page_number, page in enumerate(reader.pages, start=1):
-        text = normalize_whitespace(page.extract_text() or "")
-        if not text:
-            continue
+    for source_pdf in resolve_pdf_paths(pdf_path):
+        reader = PdfReader(str(source_pdf))
 
-        words = text.split()
-        if not words:
-            continue
+        for page_number, page in enumerate(reader.pages, start=1):
+            text = normalize_whitespace(page.extract_text() or "")
+            if not text:
+                continue
 
-        for start in range(0, len(words), step):
-            end = min(start + chunk_size, len(words))
-            chunk_text = " ".join(words[start:end]).strip()
+            words = text.split()
+            if not words:
+                continue
 
-            if len(chunk_text) >= min_chunk_chars:
-                # Retrieval quality depends heavily on chunk granularity:
-                # chunks that are too large mix unrelated facts together.
-                chunks.append(
-                    Chunk(
-                        chunk_id=len(chunks),
-                        page_number=page_number,
-                        text=chunk_text,
+            for start in range(0, len(words), step):
+                end = min(start + chunk_size, len(words))
+                chunk_text = " ".join(words[start:end]).strip()
+
+                if len(chunk_text) >= min_chunk_chars:
+                    # Retrieval quality depends heavily on chunk granularity:
+                    # chunks that are too large mix unrelated facts together.
+                    chunks.append(
+                        Chunk(
+                            chunk_id=len(chunks),
+                            source_name=source_pdf.name,
+                            source_path=str(source_pdf),
+                            page_number=page_number,
+                            text=chunk_text,
+                        )
                     )
-                )
 
-            if end == len(words):
-                break
+                if end == len(words):
+                    break
 
     if not chunks:
         raise ValueError(
@@ -165,7 +186,11 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Retrieve the most relevant chunks from a PDF with BGE ONNX + FAISS."
     )
-    parser.add_argument("pdf_path", type=Path, help="Path to the PDF file")
+    parser.add_argument(
+        "pdf_path",
+        type=Path,
+        help="Path to a PDF file or a directory of PDFs",
+    )
     parser.add_argument("query", help="Question to search for in the PDF")
     parser.add_argument(
         "--model-name",
@@ -201,16 +226,14 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
 
-    if not args.pdf_path.exists():
-        raise FileNotFoundError(f"PDF not found: {args.pdf_path}")
-
     chunks = read_pdf_chunks(
         pdf_path=args.pdf_path,
         chunk_size=args.chunk_size,
         chunk_overlap=args.chunk_overlap,
     )
 
-    print(f"Loaded {len(chunks)} chunks from {args.pdf_path}")
+    source_names = sorted({chunk.source_name for chunk in chunks})
+    print(f"Loaded {len(chunks)} chunks from {len(source_names)} PDF(s) under {args.pdf_path}")
     print(f"Embedding with {args.model_name} using direct ONNX runtime")
 
     encoder, index, _ = build_faiss_index(chunks=chunks, model_name=args.model_name)
@@ -229,7 +252,7 @@ def main() -> None:
     for rank, (score, chunk) in enumerate(results, start=1):
         print("\n" + "=" * 100)
         print(
-            f"Rank {rank} | score={score:.4f} | page={chunk.page_number} | chunk_id={chunk.chunk_id}"
+            f"Rank {rank} | score={score:.4f} | source={chunk.source_name} | page={chunk.page_number} | chunk_id={chunk.chunk_id}"
         )
         print("-" * 100)
         print(textwrap.fill(chunk.text, width=100))

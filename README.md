@@ -30,6 +30,12 @@ python retrieve_pdf.py path/to/document.pdf "What does this PDF say about pricin
 
 The current defaults are tuned for the handbook and use `--chunk-size 80 --chunk-overlap 30`.
 
+You can also index a whole directory of PDFs:
+
+```bash
+python retrieve_pdf.py data "What is the policy on outside food in the kitchen?"
+```
+
 If you want the top 5 instead:
 
 ```bash
@@ -74,3 +80,4 @@ python retrieve_pdf.py path/to/document.pdf "What is the return policy?" --raw-q
 - FAISS is built in memory in this version. You can save/load the index later once you move beyond level 1.
 - `BAAI/bge-base-en-v1.5` and its `onnx/model.onnx` file will download from Hugging Face the first time you run the script.
 - This version uses `onnxruntime` directly instead of the local `sentence-transformers` / `torch` runtime because that stack was unstable on this Intel macOS environment.
+- Retrieval results now include the source PDF file name, which matters once you index multiple documents together.
