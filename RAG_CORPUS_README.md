@@ -60,6 +60,30 @@ python evaluate_mosa_rag_jsonl.py
 python evaluate_mosa_rag_jsonl.py eval_sets/mosa_rag_gap_probes.jsonl --top-k 3
 ```
 
+## Test an LLM answer on top of retrieval
+
+`answer_mosa_rag_jsonl.py` retrieves top records from `normalized_mosa_rag.jsonl`, then sends the question plus retrieved context to an LLM through the OpenAI Responses API.
+
+Inspect the prompt without making an API call:
+
+```bash
+python answer_mosa_rag_jsonl.py "What happens if I am sick?" --dry-run
+```
+
+Run a live answer with an API key:
+
+```bash
+export OPENAI_API_KEY=...
+python answer_mosa_rag_jsonl.py "What happens if I am sick?" --show-context
+```
+
+Options:
+
+- `--llm-model` — override the LLM model (defaults to `OPENAI_MODEL` or `gpt-4.1-mini`)
+- `--top-k` — control how many retrieved records are provided to the LLM
+- `--show-context` — print retrieved records after the answer
+- `--dry-run` — print the request payload without calling the API
+
 Case format:
 
 - `id` — stable case identifier

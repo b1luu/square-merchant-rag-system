@@ -8,6 +8,7 @@ import sys
 import textwrap
 from pathlib import Path
 
+from mosa_rag.retrieve_jsonl import build_chunks, load_rows
 from retrieve_pdf import MODEL_NAME, Chunk, build_faiss_index, retrieve
 
 
@@ -22,30 +23,12 @@ def main() -> None:
     if not a.jsonl.is_file():
         sys.exit(f"error: corpus file not found: {a.jsonl}")
 
-    rows: list[dict] = []
-    for n, line in enumerate(a.jsonl.read_text(encoding="utf-8").splitlines(), 1):
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            rec = json.loads(line)
-        except json.JSONDecodeError as e:
-            print(f"warning: line {n}: invalid JSON ({e})", file=sys.stderr)
-            continue
-        if not (rec.get("retrieval_text") or "").strip():
-            print(f"warning: line {n}: empty retrieval_text, skipped", file=sys.stderr)
-            continue
-        rows.append(rec)
+    try:
+        rows = load_rows(a.jsonl)
+    except ValueError as exc:
+        sys.exit(f"error: {exc}")
 
-    if not rows:
-        sys.exit("error: no searchable records with non-empty retrieval_text")
-
-    chunks: list[Chunk] = []
-    for i, rec in enumerate(rows):
-        t = (rec.get("retrieval_text") or "").strip()
-        chunks.append(
-            Chunk(i, str(rec.get("source_file", "")), str(a.jsonl.resolve()), int(rec.get("source_page") or 0), t)
-        )
+    chunks: list[Chunk] = build_chunks(rows, a.jsonl)
 
     print(f"Indexed {len(chunks)} records from {a.jsonl} | model {a.model_name}")
     enc, index, _ = build_faiss_index(chunks=chunks, model_name=a.model_name)
