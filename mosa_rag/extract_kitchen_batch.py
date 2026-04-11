@@ -81,7 +81,8 @@ def extract_kitchen_batch_records(pages: list[PageText], source_file: str) -> li
             ],
             "Use within 4–6 hours (max).",
             ["boba", "rice_cooker", "topping"],
-            "Kitchen batch recipe: cook boba in the rice cooker for drinks. After cooking, rinse, sweeten, and hold for service. Shelf life after prep: use within about 4–6 hours.",
+            "Kitchen batch recipe: primary 1-batch boba cooking method using the rice cooker, not the pot/stovetop method. "
+            "Cook boba in the rice cooker for drinks, then rinse, sweeten, and hold for service. Shelf life after prep: use within about 4–6 hours.",
         ),
         (
             "Boba — pot method (1 batch)",
@@ -93,7 +94,8 @@ def extract_kitchen_batch_records(pages: list[PageText], source_file: str) -> li
             ],
             "Use within 4–6 hours (max).",
             ["boba", "pot", "topping"],
-            "Kitchen batch recipe: alternate boba cooking method using a pot with measured water. Finish with syrup mix consistent with the rice cooker procedure. Hold time: use within about 4–6 hours.",
+            "Kitchen batch recipe: alternate 1-batch boba cooking method using a pot on the stove, not the rice cooker method. "
+            "Use measured water in the pot, then finish with the same syrup-and-hot-water mix. Hold time: use within about 4–6 hours.",
         ),
         (
             "TGY Tea Jelly (1 batch)",

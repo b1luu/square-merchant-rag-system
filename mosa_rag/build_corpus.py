@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 
 from mosa_rag.extract_bar import extract_bar_records
+from mosa_rag.extract_extension import extract_extension_records
 from mosa_rag.extract_handbook import extract_handbook_records
 from mosa_rag.extract_kitchen_batch import extract_kitchen_batch_records
 from mosa_rag.extract_kitchen_open import extract_kitchen_open_records
@@ -21,6 +22,7 @@ DEFAULT_SOURCES: dict[str, str] = {
     "kitchen": "SOP - Kitchen.pdf",
     "handbook": "Mosa Employee Handbook.pdf",
     "towels": "Cleaning Towels Color Code.pdf",
+    "extension": "Extension.pdf",
 }
 
 
@@ -54,6 +56,10 @@ def build_records(data_dir: Path) -> list[Record]:
 
     p_tw = data_dir / DEFAULT_SOURCES["towels"]
     records.extend(extract_towel_records(read_pages(p_tw), p_tw.name))
+
+    p_ext = data_dir / DEFAULT_SOURCES["extension"]
+    if p_ext.is_file():
+        records.extend(extract_extension_records(read_pages(p_ext), p_ext.name))
 
     _assign_ids(records)
     return records

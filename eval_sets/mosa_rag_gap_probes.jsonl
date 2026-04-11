@@ -1,0 +1,8 @@
+{"id":"probe_001","category":"unsupported_policy","query":"how many sick hours do employees accrue?","notes":"Good probe for whether the corpus distinguishes sick leave policy from sick-call procedure."}
+{"id":"probe_002","category":"unsupported_policy","query":"do employees get paid family leave?","notes":"Should reveal whether benefit questions collapse onto generic time-off records."}
+{"id":"probe_003","category":"unsupported_policy","query":"what is the bereavement leave policy?","notes":"Likely unsupported today."}
+{"id":"probe_004","category":"unsupported_operations","query":"what is the store wifi password?","notes":"Operational but likely absent from the corpus."}
+{"id":"probe_005","category":"unsupported_benefits","query":"do part-time employees get health insurance?","notes":"Benefit coverage probe."}
+{"id":"probe_006","category":"unsupported_square","query":"how do i refund a square order after payment?","notes":"Different from Hungry Panda mirrored-order workflow."}
+{"id":"probe_007","category":"unsupported_hardware","query":"how do i re-pair the card reader?","notes":"Specific hardware troubleshooting probe."}
+{"id":"probe_008","category":"unsupported_food","query":"what is the employee meal policy?","notes":"Useful if you later add a work-policy or benefits document."}

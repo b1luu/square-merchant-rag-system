@@ -18,6 +18,7 @@ This folder contains a **normalized JSONL knowledge base** derived from Mosa’s
 | Kitchen batch / tea brewing | `SOP - Kitchen.pdf` |
 | Employee handbook | `Mosa Employee Handbook.pdf` (if your copy is named differently, keep the same content or adjust `DEFAULT_SOURCES` in `mosa_rag/build_corpus.py`) |
 | Towel color code | `Cleaning Towels Color Code.pdf` |
+| Extension notes | `Extension.pdf` |
 
 ## Build
 
@@ -42,7 +43,31 @@ python retrieve_mosa_rag_jsonl.py "How do I cook boba in the rice cooker?"
 python retrieve_mosa_rag_jsonl.py "Square POS passcode" --top-k 5
 ```
 
-Use `--raw-query` to omit the BGE query instruction prefix (for A/B comparison). First run may download the model; embedding 126 records is quick after that.
+Use `--raw-query` to omit the BGE query instruction prefix (for A/B comparison). First run may download the model; embedding the corpus is quick after that.
+
+## Evaluate retrieval on the normalized corpus
+
+Curated query sets live under `eval_sets/`:
+
+- `mosa_rag_smoke.jsonl` — direct questions that should clearly match current records
+- `mosa_rag_paraphrase.jsonl` — more natural phrasing to expose retrieval weaknesses
+- `mosa_rag_gap_probes.jsonl` — unsupported or likely-unsupported questions for manual inspection
+
+Run the evaluator:
+
+```bash
+python evaluate_mosa_rag_jsonl.py
+python evaluate_mosa_rag_jsonl.py eval_sets/mosa_rag_gap_probes.jsonl --top-k 3
+```
+
+Case format:
+
+- `id` — stable case identifier
+- `category` — grouping for summary metrics
+- `query` — natural-language search query
+- `expected_titles` — stable record titles that count as correct
+- `expected_ids` — optional record IDs that count as correct; more brittle than titles because IDs shift when new records are inserted
+- `notes` — optional reason or follow-up context
 
 Checks:
 
@@ -64,6 +89,13 @@ Checks:
 1. Add a new extractor module under `mosa_rag/` (or extend an existing one).
 2. Register it in `mosa_rag/build_corpus.py::build_records`.
 3. If you add a new `type`, add it to `ALLOWED_TYPES` in `mosa_rag/schema.py` and update the validator if needed.
+
+`Extension.pdf` is intended for gap-filling notes that are not yet represented elsewhere. Keep it in section form so the extractor can split it into atomic records:
+
+- Start each section with a short heading followed by bullets.
+- Keep one topic per section.
+- Use the exact terms staff will search for in the bullets (for example `paid sick leave` instead of only `leave`).
+- Optional type hints in headings are supported: `[policy]`, `[procedure]`, `[recipe]`.
 
 ## Notes
 
