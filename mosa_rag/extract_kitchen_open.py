@@ -183,7 +183,8 @@ def extract_kitchen_open_records(pages: list[PageText], source_file: str) -> lis
                 retrieval_text=(
                     f"Weekday (Monday–Thursday) kitchen prep threshold rule for {item}. Applies to kitchen staff. "
                     f"When inventory falls to about {low}, prep as follows. Before 6:00 PM: {before6}. After 6:00 PM: {after6}. "
-                    f"For boba, the last batch is scheduled at 7:00 PM. These thresholds are guidance—use judgment based on the day."
+                    f"This weekday-only rule applies Monday through Thursday, not Friday through Sunday. "
+                    f"For boba, the last batch is scheduled at 7:00 PM on weekdays. These thresholds are guidance—use judgment based on the day."
                 ),
             )
         )
@@ -217,6 +218,7 @@ def extract_kitchen_open_records(pages: list[PageText], source_file: str) -> lis
                 retrieval_text=(
                     f"Weekend (Friday–Sunday) kitchen prep threshold rule for {item}. Applies to kitchen staff. "
                     f"When inventory falls to about {low}, prep as follows. Before 6:00 PM: {before6}. After 6:00 PM: {after6}. "
+                    f"This weekend-only rule applies Friday through Sunday, not Monday through Thursday. "
                     f"For boba, the last batch is scheduled at 8:00 PM on weekends. These thresholds are guidance—use judgment based on the day."
                 ),
             )

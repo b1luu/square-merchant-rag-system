@@ -174,6 +174,24 @@ def _iter_typed_sections(pages: list[PageText]) -> list[tuple[str, str, list[str
     return sections
 
 
+def _normalize_typed_sections(
+    sections: list[tuple[str, str, list[str], int]]
+) -> list[tuple[str, str, list[str], int]]:
+    normalized: list[tuple[str, str, list[str], int]] = []
+    for rtype, title, bullets, page_number in sections:
+        if title.lower() == "square refund override code":
+            if normalized and normalized[-1][1].lower() == "square refund after payment":
+                prev_rtype, prev_title, prev_bullets, prev_page = normalized[-1]
+                merged_bullets = list(prev_bullets)
+                merged_bullets.append(
+                    "Refunds may require owner or manager authority; ask Anna or an authorized trusted worker if approval is needed."
+                )
+                normalized[-1] = (prev_rtype, prev_title, merged_bullets, prev_page)
+            continue
+        normalized.append((rtype, title, list(bullets), page_number))
+    return normalized
+
+
 def _iter_known_sections(text: str) -> list[tuple[str, list[str]]]:
     lower_text = text.lower()
     matches: list[tuple[int, int, str]] = []
@@ -253,7 +271,7 @@ def extract_extension_records(pages: list[PageText], source_file: str) -> list[R
 
     typed_sections = _iter_typed_sections(pages)
     if typed_sections:
-        for rtype, title, bullets, page_number in typed_sections:
+        for rtype, title, bullets, page_number in _normalize_typed_sections(typed_sections):
             records.append(
                 Record(
                     id="",

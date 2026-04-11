@@ -420,7 +420,8 @@ def extract_handbook_records(pages: list[PageText], source_file: str) -> list[Re
             "Clock breaks in Square; breaks are required.",
         ],
         rt=(
-            "Break policy summary (handbook): meal and rest break rules align with California labor law as described internally; employees must clock breaks in Square and take required breaks."
+            "California break policy summary: employees get one unpaid 30-minute meal break for shifts over 6 hours and one paid 10-minute rest break for every ~4 hours worked. "
+            "Employees must clock meal and rest breaks in Square, and breaks are required."
         ),
     )
     add(
