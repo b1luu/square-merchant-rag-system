@@ -18,6 +18,7 @@ This folder contains a **normalized JSONL knowledge base** derived from Mosa’s
 | Kitchen batch / tea brewing | `SOP - Kitchen.pdf` |
 | Employee handbook | `Mosa Employee Handbook.pdf` (if your copy is named differently, keep the same content or adjust `DEFAULT_SOURCES` in `mosa_rag/build_corpus.py`) |
 | Towel color code | `Cleaning Towels Color Code.pdf` |
+| Extension notes | `Extension.pdf` |
 
 ## Build
 
@@ -64,6 +65,13 @@ Checks:
 1. Add a new extractor module under `mosa_rag/` (or extend an existing one).
 2. Register it in `mosa_rag/build_corpus.py::build_records`.
 3. If you add a new `type`, add it to `ALLOWED_TYPES` in `mosa_rag/schema.py` and update the validator if needed.
+
+`Extension.pdf` is intended for gap-filling notes that are not yet represented elsewhere. Keep it in section form so the extractor can split it into atomic records:
+
+- Start each section with a short heading followed by bullets.
+- Keep one topic per section.
+- Use the exact terms staff will search for in the bullets (for example `paid sick leave` instead of only `leave`).
+- Optional type hints in headings are supported: `[policy]`, `[procedure]`, `[recipe]`.
 
 ## Notes
 
