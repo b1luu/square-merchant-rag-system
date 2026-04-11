@@ -33,6 +33,17 @@ python -m mosa_rag.build_corpus --data-dir data --out normalized_mosa_rag.jsonl
 python validate_mosa_rag_jsonl.py normalized_mosa_rag.jsonl
 ```
 
+## Try semantic search (same BGE model as `retrieve_pdf.py`)
+
+After `normalized_mosa_rag.jsonl` exists, run ad hoc queries against **`retrieval_text`** records (FAISS + ONNX BGE, no LLM):
+
+```bash
+python retrieve_mosa_rag_jsonl.py "How do I cook boba in the rice cooker?"
+python retrieve_mosa_rag_jsonl.py "Square POS passcode" --top-k 5
+```
+
+Use `--raw-query` to omit the BGE query instruction prefix (for A/B comparison). First run may download the model; embedding 126 records is quick after that.
+
 Checks:
 
 - required string fields: `id`, `type`, `title`, `retrieval_text`
