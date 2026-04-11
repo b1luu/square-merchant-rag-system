@@ -65,7 +65,8 @@ Case format:
 - `id` — stable case identifier
 - `category` — grouping for summary metrics
 - `query` — natural-language search query
-- `expected_ids` — record IDs that count as correct (omit for manual probe-only cases)
+- `expected_titles` — stable record titles that count as correct
+- `expected_ids` — optional record IDs that count as correct; more brittle than titles because IDs shift when new records are inserted
 - `notes` — optional reason or follow-up context
 
 Checks:
