@@ -13,6 +13,14 @@ SECTION_RE = re.compile(
     rf"(?P<title>{SECTION_HEADING_RE})\s*●\s*(?P<body>.*?)(?=(?:{SECTION_HEADING_RE}\s*●)|\Z)"
 )
 TYPE_HINT_RE = re.compile(r"^\[(?P<hint>policy|procedure|recipe)\]\s*", re.IGNORECASE)
+TYPE_SECTION_RE = re.compile(r"\[(?P<hint>policy|procedure|recipe)\]\s*(?P<body>.*?)(?=(?:\[(?:policy|procedure|recipe)\])|\Z)", re.IGNORECASE)
+PAGE_MARKER_RE = re.compile(r"\[\[PAGE_(?P<page>\d+)\]\]")
+LIST_DELIMITER_RE = re.compile(r"\s+(?:●|-)\s+")
+SECTION_TYPE_MAP = {
+    "policy": "policy_rule",
+    "procedure": "pos_procedure",
+    "recipe": "drink_recipe",
+}
 
 DRINK_HINTS = (
     "shaker",
@@ -86,6 +94,13 @@ def _split_bullets(body: str) -> list[str]:
     return [piece for piece in (collapse_whitespace(part) for part in body.split("●")) if piece]
 
 
+def _split_list_items(text: str) -> list[str]:
+    stripped = collapse_whitespace(text).strip(" -")
+    if not stripped:
+        return []
+    return [piece.strip(" -") for piece in LIST_DELIMITER_RE.split(stripped) if piece.strip(" -")]
+
+
 def _fallback_title(text: str) -> str:
     prefix, sep, _ = text.partition(":")
     if sep and len(prefix.split()) <= 8:
@@ -106,6 +121,56 @@ def _iter_sections(text: str) -> list[tuple[str, list[str]]]:
         bullets = _split_bullets(match.group("body"))
         if title and bullets:
             sections.append((title, bullets))
+    return sections
+
+
+def _join_pages_for_typed_sections(pages: list[PageText]) -> tuple[str, list[tuple[int, int]]]:
+    parts: list[str] = []
+    marker_positions: list[tuple[int, int]] = []
+    cursor = 0
+    for page in pages:
+        marker = f" [[PAGE_{page.page_number}]] "
+        marker_positions.append((cursor, page.page_number))
+        parts.append(marker)
+        cursor += len(marker)
+        normalized = normalize_for_parse(page.text).replace("•", "●")
+        parts.append(normalized)
+        cursor += len(normalized)
+    return "".join(parts), marker_positions
+
+
+def _page_for_offset(offset: int, marker_positions: list[tuple[int, int]]) -> int:
+    page_number = 1
+    for marker_offset, marker_page in marker_positions:
+        if marker_offset <= offset:
+            page_number = marker_page
+        else:
+            break
+    return page_number
+
+
+def _iter_typed_sections(pages: list[PageText]) -> list[tuple[str, str, list[str], int]]:
+    joined_text, marker_positions = _join_pages_for_typed_sections(pages)
+    matches = list(TYPE_SECTION_RE.finditer(joined_text))
+    if not matches:
+        return []
+
+    sections: list[tuple[str, str, list[str], int]] = []
+    for match in matches:
+        hint = match.group("hint").lower()
+        body = collapse_whitespace(PAGE_MARKER_RE.sub(" ", match.group("body")))
+        if not body:
+            continue
+
+        head, *rest = LIST_DELIMITER_RE.split(body, maxsplit=1)
+        title = _clean_title(head)
+        if not title:
+            continue
+
+        bullets = _split_list_items(rest[0]) if rest else []
+        page_number = _page_for_offset(match.start(), marker_positions)
+        sections.append((SECTION_TYPE_MAP[hint], title, bullets, page_number))
+
     return sections
 
 
@@ -185,6 +250,27 @@ def _build_retrieval_text(rtype: str, title: str, bullets: list[str]) -> str:
 
 def extract_extension_records(pages: list[PageText], source_file: str) -> list[Record]:
     records: list[Record] = []
+
+    typed_sections = _iter_typed_sections(pages)
+    if typed_sections:
+        for rtype, title, bullets, page_number in typed_sections:
+            records.append(
+                Record(
+                    id="",
+                    type=rtype,
+                    title=title,
+                    entity_name=title,
+                    doc_type="extension",
+                    role_scope=["all_staff"] if rtype != "drink_recipe" else ["bar", "kitchen"],
+                    rules=bullets if rtype == "policy_rule" else [],
+                    steps=bullets if rtype != "policy_rule" else [],
+                    tags=_build_tags(title, bullets),
+                    source_file=source_file,
+                    source_page=page_number,
+                    retrieval_text=_build_retrieval_text(rtype, title, bullets),
+                )
+            )
+        return records
 
     for page in pages:
         page_text = normalize_for_parse(page.text).replace("•", "●")

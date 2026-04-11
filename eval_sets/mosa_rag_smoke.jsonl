@@ -1,5 +1,5 @@
-{"id":"smoke_001","category":"extension_policy","query":"what happens if i am sick?","expected_titles":["What to do if you are sick?"],"notes":"Extension should beat the generic illness policy for this question."}
-{"id":"smoke_002","category":"extension_policy","query":"do we have paid sick leave?","expected_titles":["Sick-hour accrual","What to do if you are sick?"]}
+{"id":"smoke_001","category":"extension_policy","query":"what happens if i am sick?","expected_titles":["Calling out sick and shift coverage"],"notes":"Extension should beat the generic illness policy for this question."}
+{"id":"smoke_002","category":"extension_policy","query":"do we have paid sick leave?","expected_titles":["California paid sick leave and sick-hour accrual","Calling out sick and shift coverage"]}
 {"id":"smoke_003","category":"square_pos","query":"where do i find my square pos passcode?","expected_titles":["Square POS — find your 4-digit POS passcode"]}
 {"id":"smoke_004","category":"square_team","query":"how do i request time off in square team?","expected_titles":["Square Team — request time off"]}
 {"id":"smoke_005","category":"square_team","query":"how do i fix clock-out time and add missed tips?","expected_titles":["Square Team — correct clock-out time and add tips (retro edit)"]}
@@ -8,7 +8,7 @@
 {"id":"smoke_008","category":"benefits","query":"how many discounted drinks per month do employees get?","expected_titles":["Timekeeping, lockers, employee drink benefits"]}
 {"id":"smoke_009","category":"team_norms","query":"what should i do if im more than five minutes late?","expected_titles":["Team communication — lateness, handoffs, group chat announcements"]}
 {"id":"smoke_010","category":"labor_policy","query":"what breaks do employees get in california?","expected_titles":["California break rules (summary) + Square break clocking"]}
-{"id":"smoke_011","category":"inspection","query":"what do i do when the health inspector arrives?","expected_titles":["Health inspector visit — call Anna and milk/cream temperature"]}
+{"id":"smoke_011","category":"inspection","query":"what do i do when the health inspector arrives?","expected_titles":["Health inspector visit","Health inspector visit — call Anna and milk/cream temperature"]}
 {"id":"smoke_012","category":"troubleshooting","query":"what is square support phone number?","expected_titles":["Troubleshooting — Square support phone number"]}
 {"id":"smoke_013","category":"cleaning","query":"which towel is for wiping cup rims before serving?","expected_titles":["Yellow (cleanest towel)"]}
 {"id":"smoke_014","category":"kitchen_batch","query":"how do i cook boba in the rice cooker?","expected_titles":["Boba — rice cooker (1 batch)"]}

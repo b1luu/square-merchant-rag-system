@@ -1,5 +1,5 @@
-{"id":"para_001","category":"extension_policy","query":"i woke up sick and need coverage for my shift","expected_titles":["What to do if you are sick?"]}
-{"id":"para_002","category":"extension_policy","query":"is there sick pay if im ill?","expected_titles":["Sick-hour accrual","What to do if you are sick?"]}
+{"id":"para_001","category":"extension_policy","query":"i woke up sick and need coverage for my shift","expected_titles":["Calling out sick and shift coverage"]}
+{"id":"para_002","category":"extension_policy","query":"is there sick pay if im ill?","expected_titles":["California paid sick leave and sick-hour accrual","Calling out sick and shift coverage"]}
 {"id":"para_003","category":"square_pos","query":"where is my four digit code for the register?","expected_titles":["Square POS — find your 4-digit POS passcode"]}
 {"id":"para_004","category":"square_team","query":"i need next thursday off, where do i put that in square team?","expected_titles":["Square Team — request time off"]}
 {"id":"para_005","category":"square_team","query":"i forgot to clock out yesterday and didnt add my tips","expected_titles":["Square Team — correct clock-out time and add tips (retro edit)"]}
@@ -8,7 +8,7 @@
 {"id":"para_008","category":"benefits","query":"what is the staff drink perk each month?","expected_titles":["Timekeeping, lockers, employee drink benefits"]}
 {"id":"para_009","category":"team_norms","query":"who do i message if im running ten minutes late?","expected_titles":["Team communication — lateness, handoffs, group chat announcements"]}
 {"id":"para_010","category":"labor_policy","query":"do i get a paid 10 minute rest break?","expected_titles":["California break rules (summary) + Square break clocking"]}
-{"id":"para_011","category":"inspection","query":"the health inspector just walked in, who do i call?","expected_titles":["Health inspector visit — call Anna and milk/cream temperature"]}
+{"id":"para_011","category":"inspection","query":"the health inspector just walked in, who do i call?","expected_titles":["Health inspector visit","Health inspector visit — call Anna and milk/cream temperature"]}
 {"id":"para_012","category":"troubleshooting","query":"square is broken, what phone number do i call?","expected_titles":["Troubleshooting — Square support phone number"]}
 {"id":"para_013","category":"cleaning","query":"which towel is the cleanest one for drinks?","expected_titles":["Yellow (cleanest towel)"]}
 {"id":"para_014","category":"kitchen_batch","query":"whats the rice cooker method for one batch of boba?","expected_titles":["Boba — rice cooker (1 batch)"]}
@@ -17,4 +17,4 @@
 {"id":"para_017","category":"events","query":"an influencer is here, how many free menu drinks do we comp?","expected_titles":["Influencer visit procedure (free drinks)"]}
 {"id":"para_018","category":"extension_recipe","query":"whats in a tgy special?","expected_titles":["TGY Special"]}
 {"id":"para_019","category":"troubleshooting","query":"what do i do if the sugar machine is jammed or hits the deep clean cap?","expected_titles":["Troubleshooting — sugar machine errors and deep clean cap"]}
-{"id":"para_020","category":"troubleshooting","query":"what do we do if we see a rat or roach?","expected_titles":["Pest sighting response (roach/rat) + notify Anna"]}
+{"id":"para_020","category":"troubleshooting","query":"what do we do if we see a rat or roach?","expected_titles":["Pest sighting: roach or rat","Pest sighting response (roach/rat) + notify Anna"]}
