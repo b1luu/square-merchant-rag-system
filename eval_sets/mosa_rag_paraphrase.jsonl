@@ -1,0 +1,20 @@
+{"id":"para_001","category":"extension_policy","query":"i woke up sick and need coverage for my shift","expected_ids":["mosa_00127_policy_rule"]}
+{"id":"para_002","category":"extension_policy","query":"is there sick pay if im ill?","expected_ids":["mosa_00127_policy_rule"]}
+{"id":"para_003","category":"square_pos","query":"where is my four digit code for the register?","expected_ids":["mosa_00089_pos_procedure"]}
+{"id":"para_004","category":"square_team","query":"i need next thursday off, where do i put that in square team?","expected_ids":["mosa_00092_pos_procedure"]}
+{"id":"para_005","category":"square_team","query":"i forgot to clock out yesterday and didnt add my tips","expected_ids":["mosa_00095_pos_procedure"]}
+{"id":"para_006","category":"square_pos","query":"how do i make a topping unavailable in square until the end of the day?","expected_ids":["mosa_00097_pos_procedure"]}
+{"id":"para_007","category":"third_party","query":"what is the hungry panda cash and refund workflow?","expected_ids":["mosa_00096_pos_procedure"]}
+{"id":"para_008","category":"benefits","query":"what is the staff drink perk each month?","expected_ids":["mosa_00107_policy_rule"]}
+{"id":"para_009","category":"team_norms","query":"who do i message if im running ten minutes late?","expected_ids":["mosa_00104_policy_rule"]}
+{"id":"para_010","category":"labor_policy","query":"do i get a paid 10 minute rest break?","expected_ids":["mosa_00106_policy_rule"]}
+{"id":"para_011","category":"inspection","query":"the health inspector just walked in, who do i call?","expected_ids":["mosa_00120_policy_rule"]}
+{"id":"para_012","category":"troubleshooting","query":"square is broken, what phone number do i call?","expected_ids":["mosa_00118_policy_rule"]}
+{"id":"para_013","category":"cleaning","query":"which towel is the cleanest one for drinks?","expected_ids":["mosa_00123_cleaning_rule"]}
+{"id":"para_014","category":"kitchen_batch","query":"whats the rice cooker method for one batch of boba?","expected_ids":["mosa_00065_batch_prep_recipe"]}
+{"id":"para_015","category":"prep_threshold","query":"its saturday after 6 and boba is under half a batch, how much should i prep?","expected_ids":["mosa_00057_prep_threshold_rule"]}
+{"id":"para_016","category":"catering","query":"can yesterdays tea be used for catering milk teas?","expected_ids":["mosa_00109_policy_rule"]}
+{"id":"para_017","category":"events","query":"an influencer is here, how many free menu drinks do we comp?","expected_ids":["mosa_00111_policy_rule"]}
+{"id":"para_018","category":"extension_recipe","query":"whats in a tgy special?","expected_ids":["mosa_00128_drink_recipe"]}
+{"id":"para_019","category":"troubleshooting","query":"what do i do if the sugar machine is jammed or hits the deep clean cap?","expected_ids":["mosa_00117_policy_rule"]}
+{"id":"para_020","category":"troubleshooting","query":"what do we do if we see a rat or roach?","expected_ids":["mosa_00119_policy_rule"]}

@@ -27,7 +27,6 @@ DRINK_HINTS = (
 )
 PROCEDURE_HINTS = (
     "square",
-    "pos",
     "clock in",
     "clock out",
     "schedule",
@@ -36,14 +35,46 @@ PROCEDURE_HINTS = (
     "passcode",
 )
 TAG_KEYWORDS = {
+    "wifi": "wifi",
     "paid sick leave": "paid_sick_leave",
+    "sick-hour accrual": "sick_hour_accrual",
     "sick": "sick",
     "leave": "leave",
+    "paid family leave": "paid_family_leave",
+    "bereavement": "bereavement",
+    "health insurance": "health_insurance",
+    "part-time": "part_time",
+    "meal policy": "meal_policy",
+    "refund": "refund",
+    "override code": "override_code",
     "illness": "illness",
     "tgy": "tgy",
     "hun kue": "hun_kue",
     "square": "square",
-    "pos": "pos",
+}
+KNOWN_SECTION_TITLES = (
+    "What to do if you are sick?",
+    "Sick-hour accrual",
+    "TGY Special",
+    "Wifi password:",
+    "Paid Family Leave",
+    "Bereavement leave:",
+    "Health Insurance Benefits:",
+    "Employee Meal Policy",
+    "Square Refunds After Payment",
+    "Override Code:",
+)
+TITLE_TYPE_OVERRIDES = {
+    "What to do if you are sick?": "policy_rule",
+    "Sick-hour accrual": "policy_rule",
+    "TGY Special": "drink_recipe",
+    "Wifi password": "policy_rule",
+    "Paid Family Leave": "policy_rule",
+    "Bereavement leave": "policy_rule",
+    "Health Insurance Benefits": "policy_rule",
+    "Employee Meal Policy": "policy_rule",
+    "Square Refunds After Payment": "pos_procedure",
+    "Override Code": "pos_procedure",
 }
 
 
@@ -78,7 +109,39 @@ def _iter_sections(text: str) -> list[tuple[str, list[str]]]:
     return sections
 
 
+def _iter_known_sections(text: str) -> list[tuple[str, list[str]]]:
+    lower_text = text.lower()
+    matches: list[tuple[int, int, str]] = []
+    for title in KNOWN_SECTION_TITLES:
+        start = lower_text.find(title.lower())
+        if start != -1:
+            matches.append((start, start + len(title), title))
+
+    if not matches:
+        return []
+
+    matches.sort(key=lambda item: item[0])
+    sections: list[tuple[str, list[str]]] = []
+    for idx, (_, end, raw_title) in enumerate(matches):
+        next_start = matches[idx + 1][0] if idx + 1 < len(matches) else len(text)
+        body = collapse_whitespace(text[end:next_start])
+        if not body:
+            continue
+        bullets = _split_bullets(body) if "●" in body else [body]
+        sections.append((_clean_title(raw_title), bullets))
+    return sections
+
+
+def _matches_hint(text: str, hint: str) -> bool:
+    if re.fullmatch(r"[a-z0-9_-]+", hint):
+        return re.search(rf"\b{re.escape(hint)}\b", text) is not None
+    return hint in text
+
+
 def _classify_section(title: str, bullets: list[str]) -> tuple[str, str]:
+    if title in TITLE_TYPE_OVERRIDES:
+        return TITLE_TYPE_OVERRIDES[title], title
+
     hint_match = TYPE_HINT_RE.match(title)
     if hint_match:
         hint = hint_match.group("hint").lower()
@@ -93,9 +156,9 @@ def _classify_section(title: str, bullets: list[str]) -> tuple[str, str]:
         )
 
     text = f"{title} {' '.join(bullets)}".lower()
-    if any(token in text for token in DRINK_HINTS):
+    if any(_matches_hint(text, token) for token in DRINK_HINTS):
         return "drink_recipe", title
-    if any(token in text for token in PROCEDURE_HINTS):
+    if any(_matches_hint(text, token) for token in PROCEDURE_HINTS):
         return "pos_procedure", title
     return "policy_rule", title
 
@@ -104,7 +167,7 @@ def _build_tags(title: str, bullets: list[str]) -> list[str]:
     tags = ["extension"]
     haystack = f"{title} {' '.join(bullets)}".lower()
     for needle, tag in TAG_KEYWORDS.items():
-        if needle in haystack and tag not in tags:
+        if _matches_hint(haystack, needle) and tag not in tags:
             tags.append(tag)
     return tags
 
@@ -125,7 +188,8 @@ def extract_extension_records(pages: list[PageText], source_file: str) -> list[R
 
     for page in pages:
         page_text = normalize_for_parse(page.text).replace("•", "●")
-        for raw_title, bullets in _iter_sections(page_text):
+        sections = _iter_known_sections(page_text) or _iter_sections(page_text)
+        for raw_title, bullets in sections:
             rtype, title = _classify_section(raw_title, bullets)
             records.append(
                 Record(

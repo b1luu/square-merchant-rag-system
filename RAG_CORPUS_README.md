@@ -43,7 +43,30 @@ python retrieve_mosa_rag_jsonl.py "How do I cook boba in the rice cooker?"
 python retrieve_mosa_rag_jsonl.py "Square POS passcode" --top-k 5
 ```
 
-Use `--raw-query` to omit the BGE query instruction prefix (for A/B comparison). First run may download the model; embedding 126 records is quick after that.
+Use `--raw-query` to omit the BGE query instruction prefix (for A/B comparison). First run may download the model; embedding the corpus is quick after that.
+
+## Evaluate retrieval on the normalized corpus
+
+Curated query sets live under `eval_sets/`:
+
+- `mosa_rag_smoke.jsonl` — direct questions that should clearly match current records
+- `mosa_rag_paraphrase.jsonl` — more natural phrasing to expose retrieval weaknesses
+- `mosa_rag_gap_probes.jsonl` — unsupported or likely-unsupported questions for manual inspection
+
+Run the evaluator:
+
+```bash
+python evaluate_mosa_rag_jsonl.py
+python evaluate_mosa_rag_jsonl.py eval_sets/mosa_rag_gap_probes.jsonl --top-k 3
+```
+
+Case format:
+
+- `id` — stable case identifier
+- `category` — grouping for summary metrics
+- `query` — natural-language search query
+- `expected_ids` — record IDs that count as correct (omit for manual probe-only cases)
+- `notes` — optional reason or follow-up context
 
 Checks:
 
