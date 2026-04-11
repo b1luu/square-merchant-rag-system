@@ -24,6 +24,7 @@ class EvalCase:
     query: str
     category: str
     expected_ids: tuple[str, ...]
+    expected_titles: tuple[str, ...]
     notes: str = ""
 
 
@@ -75,6 +76,11 @@ def load_cases(case_path: Path) -> list[EvalCase]:
             expected_ids = (expected_ids_raw,)
         else:
             expected_ids = tuple(str(item) for item in expected_ids_raw)
+        expected_titles_raw = record.get("expected_titles") or []
+        if isinstance(expected_titles_raw, str):
+            expected_titles = (expected_titles_raw,)
+        else:
+            expected_titles = tuple(str(item) for item in expected_titles_raw)
         if not query:
             raise ValueError(f"{case_path}:{line_number} is missing query")
         cases.append(
@@ -83,6 +89,7 @@ def load_cases(case_path: Path) -> list[EvalCase]:
                 query=query,
                 category=category,
                 expected_ids=expected_ids,
+                expected_titles=expected_titles,
                 notes=str(record.get("notes") or "").strip(),
             )
         )
@@ -129,7 +136,15 @@ def evaluate_case_file(
         if case.expected_ids:
             match_rank = None
             for rank, (_, chunk) in enumerate(results, start=1):
-                if rows[chunk.chunk_id]["id"] in case.expected_ids:
+                record = rows[chunk.chunk_id]
+                if record["id"] in case.expected_ids or record["title"] in case.expected_titles:
+                    match_rank = rank
+                    break
+            scored_cases.append((case, match_rank, results))
+        elif case.expected_titles:
+            match_rank = None
+            for rank, (_, chunk) in enumerate(results, start=1):
+                if rows[chunk.chunk_id]["title"] in case.expected_titles:
                     match_rank = rank
                     break
             scored_cases.append((case, match_rank, results))
@@ -168,7 +183,8 @@ def evaluate_case_file(
             print("\nMisses")
             for case, _, results in failures:
                 print(f"- {case.case_id} [{case.category}] {case.query}")
-                print(f"  expected: {', '.join(case.expected_ids)}")
+                expected = ", ".join(case.expected_ids or case.expected_titles)
+                print(f"  expected: {expected}")
                 if case.notes:
                     print(f"  notes: {case.notes}")
                 for row in summarize_result_rows(rows, results):

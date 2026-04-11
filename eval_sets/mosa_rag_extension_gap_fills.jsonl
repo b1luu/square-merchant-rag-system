@@ -1,0 +1,7 @@
+{"id":"gapfill_001","category":"extension_policy","query":"how many sick hours do employees accrue?","expected_titles":["Sick-hour accrual"]}
+{"id":"gapfill_002","category":"extension_policy","query":"do employees get paid family leave?","expected_titles":["Paid Family Leave"]}
+{"id":"gapfill_003","category":"extension_policy","query":"what is the bereavement leave policy?","expected_titles":["Bereavement leave"]}
+{"id":"gapfill_004","category":"extension_policy","query":"do part-time employees get health insurance?","expected_titles":["Health Insurance Benefits"]}
+{"id":"gapfill_005","category":"extension_policy","query":"what is the employee meal policy?","expected_titles":["Employee Meal Policy"]}
+{"id":"gapfill_006","category":"extension_ops","query":"what is the store wifi password?","expected_titles":["Wifi password"]}
+{"id":"gapfill_007","category":"extension_ops","query":"how do i refund a square order after payment?","expected_titles":["Square Refunds After Payment"]}

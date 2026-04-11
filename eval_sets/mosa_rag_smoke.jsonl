@@ -1,19 +1,19 @@
-{"id":"smoke_001","category":"extension_policy","query":"what happens if i am sick?","expected_ids":["mosa_00127_policy_rule"],"notes":"Extension should beat the generic illness policy for this question."}
-{"id":"smoke_002","category":"extension_policy","query":"do we have paid sick leave?","expected_ids":["mosa_00127_policy_rule"]}
-{"id":"smoke_003","category":"square_pos","query":"where do i find my square pos passcode?","expected_ids":["mosa_00089_pos_procedure"]}
-{"id":"smoke_004","category":"square_team","query":"how do i request time off in square team?","expected_ids":["mosa_00092_pos_procedure"]}
-{"id":"smoke_005","category":"square_team","query":"how do i fix clock-out time and add missed tips?","expected_ids":["mosa_00095_pos_procedure"]}
-{"id":"smoke_006","category":"square_pos","query":"how do i mark an item sold out in square until end of day?","expected_ids":["mosa_00097_pos_procedure"]}
-{"id":"smoke_007","category":"third_party","query":"how do i enter a hungry panda order so tickets print?","expected_ids":["mosa_00096_pos_procedure"]}
-{"id":"smoke_008","category":"benefits","query":"how many discounted drinks per month do employees get?","expected_ids":["mosa_00107_policy_rule"]}
-{"id":"smoke_009","category":"team_norms","query":"what should i do if im more than five minutes late?","expected_ids":["mosa_00104_policy_rule"]}
-{"id":"smoke_010","category":"labor_policy","query":"what breaks do employees get in california?","expected_ids":["mosa_00106_policy_rule"]}
-{"id":"smoke_011","category":"inspection","query":"what do i do when the health inspector arrives?","expected_ids":["mosa_00120_policy_rule"]}
-{"id":"smoke_012","category":"troubleshooting","query":"what is square support phone number?","expected_ids":["mosa_00118_policy_rule"]}
-{"id":"smoke_013","category":"cleaning","query":"which towel is for wiping cup rims before serving?","expected_ids":["mosa_00123_cleaning_rule"]}
-{"id":"smoke_014","category":"kitchen_batch","query":"how do i cook boba in the rice cooker?","expected_ids":["mosa_00065_batch_prep_recipe"]}
-{"id":"smoke_015","category":"prep_threshold","query":"on weekdays after 6pm when boba is low how much should i make?","expected_ids":["mosa_00053_prep_threshold_rule"]}
-{"id":"smoke_016","category":"prep_threshold","query":"on weekends what is the last batch time for boba?","expected_ids":["mosa_00057_prep_threshold_rule"]}
-{"id":"smoke_017","category":"catering","query":"can catering use overnight tea or does it need to be fresh?","expected_ids":["mosa_00109_policy_rule"]}
-{"id":"smoke_018","category":"events","query":"how many free drinks can influencers get?","expected_ids":["mosa_00111_policy_rule"]}
-{"id":"smoke_019","category":"extension_recipe","query":"how do i make tgy special?","expected_ids":["mosa_00128_drink_recipe"]}
+{"id":"smoke_001","category":"extension_policy","query":"what happens if i am sick?","expected_titles":["What to do if you are sick?"],"notes":"Extension should beat the generic illness policy for this question."}
+{"id":"smoke_002","category":"extension_policy","query":"do we have paid sick leave?","expected_titles":["Sick-hour accrual","What to do if you are sick?"]}
+{"id":"smoke_003","category":"square_pos","query":"where do i find my square pos passcode?","expected_titles":["Square POS — find your 4-digit POS passcode"]}
+{"id":"smoke_004","category":"square_team","query":"how do i request time off in square team?","expected_titles":["Square Team — request time off"]}
+{"id":"smoke_005","category":"square_team","query":"how do i fix clock-out time and add missed tips?","expected_titles":["Square Team — correct clock-out time and add tips (retro edit)"]}
+{"id":"smoke_006","category":"square_pos","query":"how do i mark an item sold out in square until end of day?","expected_titles":["Mark items sold out in Square (include end time); toppings end-of-day restock"]}
+{"id":"smoke_007","category":"third_party","query":"how do i enter a hungry panda order so tickets print?","expected_titles":["Hungry Panda — enter order naming and payment workflow"]}
+{"id":"smoke_008","category":"benefits","query":"how many discounted drinks per month do employees get?","expected_titles":["Timekeeping, lockers, employee drink benefits"]}
+{"id":"smoke_009","category":"team_norms","query":"what should i do if im more than five minutes late?","expected_titles":["Team communication — lateness, handoffs, group chat announcements"]}
+{"id":"smoke_010","category":"labor_policy","query":"what breaks do employees get in california?","expected_titles":["California break rules (summary) + Square break clocking"]}
+{"id":"smoke_011","category":"inspection","query":"what do i do when the health inspector arrives?","expected_titles":["Health inspector visit — call Anna and milk/cream temperature"]}
+{"id":"smoke_012","category":"troubleshooting","query":"what is square support phone number?","expected_titles":["Troubleshooting — Square support phone number"]}
+{"id":"smoke_013","category":"cleaning","query":"which towel is for wiping cup rims before serving?","expected_titles":["Yellow (cleanest towel)"]}
+{"id":"smoke_014","category":"kitchen_batch","query":"how do i cook boba in the rice cooker?","expected_titles":["Boba — rice cooker (1 batch)"]}
+{"id":"smoke_015","category":"prep_threshold","query":"on weekdays after 6pm when boba is low how much should i make?","expected_titles":["Weekday (Mon–Thu) prep threshold — Boba"]}
+{"id":"smoke_016","category":"prep_threshold","query":"on weekends what is the last batch time for boba?","expected_titles":["Weekend (Fri–Sun) prep threshold — Boba"]}
+{"id":"smoke_017","category":"catering","query":"can catering use overnight tea or does it need to be fresh?","expected_titles":["Catering — which teas may be overnight vs must be fresh"]}
+{"id":"smoke_018","category":"events","query":"how many free drinks can influencers get?","expected_titles":["Influencer visit procedure (free drinks)"]}
+{"id":"smoke_019","category":"extension_recipe","query":"how do i make tgy special?","expected_titles":["TGY Special"]}
