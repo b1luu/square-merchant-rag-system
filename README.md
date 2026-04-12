@@ -151,56 +151,62 @@ python evaluate_retrieval.py --pdf-path path/to/document.pdf --chunk-sizes 60,80
 
 ## Quantifying results
 
-### Retrieval quality (reproducible in this repo)
+Metrics below were produced by **running the evaluators in this repository** (same commands, fresh FAISS build each run). **Hit@1** = first hit is correct; **Hit@k** = correct row appears in top‑k; **MRR** = mean reciprocal rank of the first correct hit. Re-run after you change PDFs, JSONL, eval cases, or embedding settings—numbers will move if the data moves.
 
-The evaluators report **Hit@1** (correct unit ranked first), **Hit@k** (correct unit in the top‑k list), and **MRR** (mean reciprocal rank of the first correct hit). Sweep chunk settings to compare configurations on the same PDF and question set.
+### PDF handbook retrieval (`evaluate_retrieval.py`)
 
-**Example (bundled PDF eval):** `evaluate_retrieval.py` ships with **8** fixed questions against the PDF given by **`--pdf-path`** (see the script default). With `--chunk-sizes 80 --chunk-overlaps 30 --top-k 3` and the default BGE query instruction, one representative run produced:
-
-| Eval setup | Indexed chunks | Hit@1 | Hit@k | MRR |
-|------------|----------------|-------|-------|-----|
-| 8 cases, instruction on | 60 | 8/8 | 8/8 | 1.000 |
-
-Reproduce:
+Command:
 
 ```bash
-python evaluate_retrieval.py --chunk-sizes 80 --chunk-overlaps 30 --top-k 3
+python evaluate_retrieval.py \
+  --pdf-path "data/Mosa Employee Handbook.pdf" \
+  --chunk-sizes 80 \
+  --chunk-overlaps 30 \
+  --top-k 3
 ```
 
-Different `--pdf-path`, cases, or `top-k` will change these numbers.
+**Captured output (2026-04-12, repo checkout):**
 
-For the JSONL corpus path, use:
+| Cases | Chunk size / overlap | Chunks built | Hit@1 | Hit@3 | MRR | Wall time (approx.) |
+|------:|---------------------|-------------:|------:|------:|----:|---------------------:|
+| 8 | 80 / 30 | 60 | 8/8 | 8/8 | 1.000 | ~52 s |
+
+Script header from that run: `PDF: data/Mosa Employee Handbook.pdf`, `Cases: 8`, `Top-k: 3`, `Instruction: True`, table row `80  30  60  8/8  8/8  1.000`.
+
+Sweep more `(chunk_size, chunk_overlap)` pairs with `--chunk-sizes` / `--chunk-overlaps` to compare grids on the same PDF.
+
+### JSONL corpus retrieval (`evaluate_mosa_rag_jsonl.py`)
+
+Command (defaults: `eval_sets/mosa_rag_smoke.jsonl` + `eval_sets/mosa_rag_paraphrase.jsonl`, BGE query instruction on):
 
 ```bash
-python evaluate_mosa_rag_jsonl.py --jsonl path/to/corpus.jsonl
+python evaluate_mosa_rag_jsonl.py --jsonl normalized_mosa_rag.jsonl --top-k 5
 ```
 
-That prints Hit@1, Hit@k, MRR per eval file and **by category** (see `eval_sets/`).
+**Captured output (2026-04-12, same checkout):**
 
-### Wall-clock latency (engineering, not “ops %”)
+| Corpus | Records | Eval file | Scored cases | Hit@1 | Hit@5 | MRR |
+|--------|--------:|-----------|-------------:|------:|------:|----:|
+| `normalized_mosa_rag.jsonl` | 137 | `mosa_rag_smoke.jsonl` | 19 | 19/19 | 19/19 | 1.000 |
+| same | 137 | `mosa_rag_paraphrase.jsonl` | 20 | 20/20 | 20/20 | 1.000 |
 
-Compare end-to-end script time before and after a change (for example **cold** FAISS build vs **cached** index on the JSONL tools) with the shell `time` command. Report improvement as:
+*Wall time for that full command (both files, cold FAISS build over 137 records): ~61 s on the machine used for the capture.*
 
-`(t_baseline − t_new) / t_baseline × 100%` when lower time is better.
+That run reported **no misses** and **no “not rank 1”** rows for either file. Every **By category** line in the log showed **Hit@1 = Hit@5 = case count** and **MRR 1.000**.
 
-### Operational impact (your numbers only)
+Other files under `eval_sets/` (for example gap probes) are **not** in the default invocation; pass them explicitly if you want those numbers in the log.
 
-Team-level outcomes—**% fewer wrong procedures**, **% shorter time-to-documented answer**, **ticket reopen rate**, audit scores—depend on **how** you roll out search/RAG and **what** you measure in HR, QA, or the helpdesk. This repository does **not** compute those automatically.
+### Wall-clock / engineering %
 
-Use a simple table in internal reports (fill in after you have baselines):
+Compare script runtime before and after a change (e.g. cold embed vs cached index on the JSONL tools) with `time python …`. Improvement when lower is better:
 
-| Metric | Baseline | After rollout | Δ % |
-|--------|----------|---------------|-----|
-| Median time to first grounded answer | | | |
-| Weekly procedure / policy incidents | | | |
-| Staff survey (clarity of procedures) | | | |
+`(t_baseline − t_new) / t_baseline × 100%`.
 
-For any metric where **lower is better**, use  
-`(baseline − new) / baseline × 100%`.  
-For metrics where **higher is better**, use  
-`(new − baseline) / baseline × 100%`.
+### Operational KPIs (fill in yourself)
 
-**Do not invent** improvement percentages in this README; publish only values you have actually measured.
+Store-level **% improvements** (time to answer, incidents, survey scores) are **not** emitted by these scripts. Measure in your own tools, then use  
+`(baseline − new) / baseline × 100%` when lower is better, or  
+`(new − baseline) / baseline × 100%` when higher is better. **Do not** copy made-up business percentages into this file.
 
 ## Query instruction (BGE)
 
