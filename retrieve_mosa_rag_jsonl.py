@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import argparse
-import json
+import os
 import sys
 import textwrap
 from pathlib import Path
 
-from retrieve_pdf import MODEL_NAME, Chunk, build_faiss_index, retrieve
+from mosa_rag.faiss_cache import default_cache_root, load_or_build_faiss_index
+from mosa_rag.retrieve_jsonl import build_chunks, load_rows
+from retrieve_pdf import MODEL_NAME, Chunk, retrieve
 
 
 def main() -> None:
@@ -18,37 +20,41 @@ def main() -> None:
     p.add_argument("--model-name", default=MODEL_NAME)
     p.add_argument("--top-k", type=int, default=5)
     p.add_argument("--raw-query", action="store_true", help="Omit BGE query instruction prefix")
+    p.add_argument(
+        "--cache-dir",
+        type=Path,
+        default=None,
+        help="Directory for FAISS cache (default: BGE_RAG_CACHE_DIR env, else .rag_index_cache next to --jsonl)",
+    )
+    p.add_argument("--no-cache", action="store_true", help="Always rebuild embeddings and FAISS index")
     a = p.parse_args()
     if not a.jsonl.is_file():
         sys.exit(f"error: corpus file not found: {a.jsonl}")
 
-    rows: list[dict] = []
-    for n, line in enumerate(a.jsonl.read_text(encoding="utf-8").splitlines(), 1):
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            rec = json.loads(line)
-        except json.JSONDecodeError as e:
-            print(f"warning: line {n}: invalid JSON ({e})", file=sys.stderr)
-            continue
-        if not (rec.get("retrieval_text") or "").strip():
-            print(f"warning: line {n}: empty retrieval_text, skipped", file=sys.stderr)
-            continue
-        rows.append(rec)
+    try:
+        rows = load_rows(a.jsonl)
+    except ValueError as exc:
+        sys.exit(f"error: {exc}")
 
-    if not rows:
-        sys.exit("error: no searchable records with non-empty retrieval_text")
+    chunks: list[Chunk] = build_chunks(rows, a.jsonl)
 
-    chunks: list[Chunk] = []
-    for i, rec in enumerate(rows):
-        t = (rec.get("retrieval_text") or "").strip()
-        chunks.append(
-            Chunk(i, str(rec.get("source_file", "")), str(a.jsonl.resolve()), int(rec.get("source_page") or 0), t)
-        )
+    if a.no_cache:
+        cache_root = None
+    elif a.cache_dir is not None:
+        cache_root = a.cache_dir
+    elif os.getenv("BGE_RAG_CACHE_DIR"):
+        cache_root = Path(os.environ["BGE_RAG_CACHE_DIR"])
+    else:
+        cache_root = default_cache_root(a.jsonl)
 
     print(f"Indexed {len(chunks)} records from {a.jsonl} | model {a.model_name}")
-    enc, index, _ = build_faiss_index(chunks=chunks, model_name=a.model_name)
+    enc, index, _ = load_or_build_faiss_index(
+        chunks=chunks,
+        model_name=a.model_name,
+        source_jsonl=a.jsonl,
+        cache_root=cache_root,
+        no_cache=a.no_cache,
+    )
     for rank, (score, ch) in enumerate(
         retrieve(enc, index, chunks, a.query, min(a.top_k, len(chunks)), not a.raw_query), 1
     ):

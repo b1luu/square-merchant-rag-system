@@ -1,103 +1,130 @@
-# Mosa Tea — Normalized RAG Corpus
+# Mosa Ops RAG System
 
-This folder contains a **normalized JSONL knowledge base** derived from Mosa’s SOP PDFs and employee handbook. It is designed for **semantic retrieval with BGE** (and similar dense embedding models) by storing **atomic operational units** instead of raw PDF text or page-based chunks.
+**Purpose:** **Mosa Ops RAG System** is the **domain-specific RAG** workflow for operations: PDFs are turned into a searchable **JSONL knowledge base** (one atomic record per line) for **BGE + FAISS** retrieval and **grounded** staff answers. An optional **Ollama** step generates text **only in the context of retrieved records**.
 
 ## Why this structure (vs. raw PDF chunking)
 
-- **Atomic concepts**: Each JSONL line is one main idea (one drink build, one batch recipe, one POS workflow, one policy topic). That improves precision/recall because embeddings align with how staff ask questions.
-- **Operational facts preserved**: Quantities, temperatures, time windows, shelf life, and ordered steps live in structured fields (`ingredients`, `steps`, `rules`, `threshold`, `storage_life`, etc.) and are repeated in natural language inside `retrieval_text`.
-- **Cleaner text for embeddings**: `retrieval_text` removes PDF line-wrap noise and states context (“bar staff”, “kitchen opening”, “Square POS”) so queries like “how do I clock in?” match even if the PDF wording is scattered.
-- **No page-only chunking**: `source_page` is metadata for traceability, not a segmentation strategy.
+- **Atomic concepts**: Each JSONL line is one main idea (e.g. one recipe, one procedure, one policy topic). Embeddings align better with short, natural staff questions.
+- **Structured fields**: Quantities, times, ordered steps, and rules can live in typed fields (`ingredients`, `steps`, `rules`, `threshold`, `storage_life`, etc.) and in natural language inside `retrieval_text`.
+- **Cleaner embedding text**: `retrieval_text` can drop PDF line-wrap noise and add light context so informal queries still match.
+- **Traceability**: `source_page` and paths are metadata for auditing, not the primary chunking strategy.
 
-## Source files (expected in `data/`)
+## Source PDFs
 
-| Role | File |
-|------|------|
-| Bar SOP | `SOP - Bar (1).pdf` |
-| Kitchen opening | `SOP - Kitchen Open.pdf` |
-| Kitchen batch / tea brewing | `SOP - Kitchen.pdf` |
-| Employee handbook | `Mosa Employee Handbook.pdf` (if your copy is named differently, keep the same content or adjust `DEFAULT_SOURCES` in `mosa_rag/build_corpus.py`) |
-| Towel color code | `Cleaning Towels Color Code.pdf` |
-| Extension notes | `Extension.pdf` |
+Put inputs under `data/` (or another directory you pass to the builder). Which files are ingested and how they map to extractors is **project-specific**—see `mosa_rag/build_corpus.py` and the `mosa_rag/extract_*.py` modules.
 
 ## Build
 
 From the repo root (with dependencies installed):
 
 ```bash
-python -m mosa_rag.build_corpus --data-dir data --out normalized_mosa_rag.jsonl
+python -m mosa_rag.build_corpus --data-dir data --out corpus.jsonl
 ```
+
+Use any output path you prefer; CLI tools accept **`--jsonl`** when the default file in the scripts does not match yours.
 
 ## Validate
 
 ```bash
-python validate_mosa_rag_jsonl.py normalized_mosa_rag.jsonl
+python validate_mosa_rag_jsonl.py corpus.jsonl
 ```
 
-## Try semantic search (same BGE model as `retrieve_pdf.py`)
+## Semantic search (BGE + FAISS, no LLM)
 
-After `normalized_mosa_rag.jsonl` exists, run ad hoc queries against **`retrieval_text`** records (FAISS + ONNX BGE, no LLM):
+After the JSONL exists:
 
 ```bash
-python retrieve_mosa_rag_jsonl.py "How do I cook boba in the rice cooker?"
-python retrieve_mosa_rag_jsonl.py "Square POS passcode" --top-k 5
+python retrieve_mosa_rag_jsonl.py "What are the opening steps for the back of house?" --jsonl corpus.jsonl
+python retrieve_mosa_rag_jsonl.py "closing checklist for the register" --jsonl corpus.jsonl --top-k 5
 ```
 
-Use `--raw-query` to omit the BGE query instruction prefix (for A/B comparison). First run may download the model; embedding the corpus is quick after that.
+Use `--raw-query` to omit the BGE query-instruction prefix (for A/B comparison). The embedding model may download on first use.
 
-## Evaluate retrieval on the normalized corpus
+### Index cache
 
-Curated query sets live under `eval_sets/`:
+Re-embedding the full corpus every run is optional. By default, an on-disk cache lives next to the JSONL under `.rag_index_cache/` (or set **`BGE_RAG_CACHE_DIR`**). Use **`--no-cache`** to force a full rebuild.
 
-- `mosa_rag_smoke.jsonl` — direct questions that should clearly match current records
-- `mosa_rag_paraphrase.jsonl` — more natural phrasing to expose retrieval weaknesses
-- `mosa_rag_gap_probes.jsonl` — unsupported or likely-unsupported questions for manual inspection
+## Retrieval evaluation
 
-Run the evaluator:
+Curated query sets under `eval_sets/` (filenames may vary by checkout):
 
 ```bash
-python evaluate_mosa_rag_jsonl.py
-python evaluate_mosa_rag_jsonl.py eval_sets/mosa_rag_gap_probes.jsonl --top-k 3
+python evaluate_mosa_rag_jsonl.py --jsonl corpus.jsonl
+python evaluate_mosa_rag_jsonl.py eval_sets/your_queries.jsonl --jsonl corpus.jsonl --top-k 3
 ```
 
-Case format:
+## LLM answers on top of retrieval
 
-- `id` — stable case identifier
-- `category` — grouping for summary metrics
-- `query` — natural-language search query
-- `expected_titles` — stable record titles that count as correct
-- `expected_ids` — optional record IDs that count as correct; more brittle than titles because IDs shift when new records are inserted
-- `notes` — optional reason or follow-up context
+`answer_mosa_rag_jsonl.py` runs the same retrieval path, then calls a local **Ollama** model via HTTP (`/api/generate`). No cloud API key is required for the default setup.
 
-Checks:
+Inspect the composed prompt without calling the model:
 
-- required string fields: `id`, `type`, `title`, `retrieval_text`
-- `id` uniqueness
-- `type` is one of the allowed record types
-- `retrieval_text` is non-empty
+```bash
+export OLLAMA_PROVIDER=ollama_local
+python answer_mosa_rag_jsonl.py "What is the sick leave policy?" --jsonl corpus.jsonl --dry-run
+```
+
+Run a live answer (Ollama must be running; pull your model first, e.g. `ollama pull llama3.2`):
+
+```bash
+export OLLAMA_PROVIDER=ollama_local
+python answer_mosa_rag_jsonl.py "What is the sick leave policy?" --jsonl corpus.jsonl --show-context
+```
+
+Remote or self-hosted Ollama (same HTTP API, e.g. another machine or a container):
+
+```bash
+export OLLAMA_PROVIDER=ollama_remote
+export OLLAMA_BASE_URL=https://your-ollama-host.example.com
+export OLLAMA_MODEL=llama3.2
+python answer_mosa_rag_jsonl.py "Your question" --jsonl corpus.jsonl
+```
+
+Useful environment variables:
+
+| Variable | Role |
+|----------|------|
+| `OLLAMA_PROVIDER` | `ollama_local` (default base `http://localhost:11434`) or `ollama_remote` (`OLLAMA_BASE_URL`) |
+| `OLLAMA_BASE_URL` | Base URL for `ollama_remote` (no `/api/generate` suffix) |
+| `OLLAMA_MODEL` | Model tag (default in code: `llama3.2`) |
+| `OLLAMA_TEMPERATURE` | Optional; default `0` in the client for steadier answers |
+
+CLI flags include **`--ollama-model`**, **`--ollama-provider`**, **`--top-k`**, **`--show-context`**, **`--dry-run`**, **`--cache-dir`**, **`--no-cache`**.
+
+## Case format (eval JSONL)
+
+- `id` — stable case identifier  
+- `category` — grouping for summary metrics  
+- `query` — natural-language search query  
+- `expected_titles` — record titles that count as correct  
+- `expected_ids` — optional; brittle if IDs shift when records are inserted  
+- `notes` — optional context for humans  
+
+## Record integrity (validator)
+
+- Required string fields: `id`, `type`, `title`, `retrieval_text`  
+- `id` uniqueness  
+- `type` must be an allowed record type  
+- `retrieval_text` non-empty  
 
 ## Code layout
 
-- `mosa_rag/pdf_text.py` — pypdf per-page extraction
-- `mosa_rag/normalize.py` — whitespace cleanup for parsing and canonical text
-- `mosa_rag/extract_*.py` — one module per document family (bar, kitchen batch, kitchen open, handbook, towels)
-- `mosa_rag/build_corpus.py` — assigns stable IDs and writes JSONL
-- `validate_mosa_rag_jsonl.py` — lightweight integrity checks
+- `mosa_rag/pdf_text.py` — PDF text extraction  
+- `mosa_rag/normalize.py` — whitespace cleanup  
+- `mosa_rag/extract_*.py` — document-family extractors  
+- `mosa_rag/build_corpus.py` — assigns IDs and writes JSONL  
+- `mosa_rag/retrieve_jsonl.py` — load rows and build retrieval chunks  
+- `mosa_rag/faiss_cache.py` — optional persisted FAISS index  
+- `mosa_rag/llm.py` — Ollama HTTP adapter (`call_llm`)  
+- `validate_mosa_rag_jsonl.py` — lightweight checks  
 
 ## Extending
 
-1. Add a new extractor module under `mosa_rag/` (or extend an existing one).
-2. Register it in `mosa_rag/build_corpus.py::build_records`.
-3. If you add a new `type`, add it to `ALLOWED_TYPES` in `mosa_rag/schema.py` and update the validator if needed.
-
-`Extension.pdf` is intended for gap-filling notes that are not yet represented elsewhere. Keep it in section form so the extractor can split it into atomic records:
-
-- Start each section with a short heading followed by bullets.
-- Keep one topic per section.
-- Use the exact terms staff will search for in the bullets (for example `paid sick leave` instead of only `leave`).
-- Optional type hints in headings are supported: `[policy]`, `[procedure]`, `[recipe]`.
+1. Add or extend an extractor under `mosa_rag/`.  
+2. Register it in `mosa_rag/build_corpus.py::build_records`.  
+3. For a new `type`, add it to `ALLOWED_TYPES` in `mosa_rag/schema.py` and update the validator if needed.  
 
 ## Notes
 
-- **No OCR**: text comes from PDF extraction (`pypdf`). If a future PDF is scan-only, you’ll need an OCR step upstream.
-- **Handbook links**: the handbook references external guidelines (e.g., county food safety). Those URLs are not embedded as live links in this corpus—add them if you want retrieval to surface the exact link text.
+- **No OCR in the default path**: text comes from PDF extraction. Scan-only PDFs need OCR upstream.  
+- **External links** in source PDFs are not automatically normalized into the JSONL unless your extractor adds them.  
