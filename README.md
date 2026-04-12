@@ -1,6 +1,6 @@
-# Mosa Ops Retrieval
+# Mosa Ops RAG System
 
-**Purpose:** This repo is a **domain-specific RAG system** for operations work: staff questions are answered using **retrieved** passages from your own SOPs, recipes, and policy text—not from the model’s open-ended general knowledge. A **normalized JSONL** path adds dense retrieval (BGE + FAISS), optional **on-disk index cache**, and an optional **local LLM** (Ollama) that must stay grounded in those hits. A simpler **PDF chunk** path offers retrieval-only search over raw documents.
+**Purpose:** **Mosa Ops RAG System** is a **domain-specific RAG** stack for operations: staff questions are answered from **retrieved** passages in your own SOPs, recipes, and policy text—not from the model’s unconstrained general knowledge. The main path uses a **structured JSONL knowledge base**, **BGE + FAISS** retrieval, an optional **on-disk index cache**, and an optional **local LLM** (Ollama) grounded in those hits. A simpler **PDF chunk** path offers retrieval-only search over raw documents.
 
 ---
 
@@ -79,6 +79,6 @@ python retrieve_pdf.py path/to/document.pdf "What is the return policy?" --raw-q
 - This project uses `onnxruntime` for BGE inference.  
 - Results include source file names when you index multiple PDFs together.  
 
-## Domain-specific JSONL RAG (retrieval + optional local LLM)
+## Mosa Ops RAG System — corpus workflow
 
-For the full ops corpus workflow (build, validate, search, optional Ollama answers), see **`RAG_CORPUS_README.md`**.
+For build, validate, search, and optional Ollama answers over the ops knowledge base, see **`RAG_CORPUS_README.md`**.

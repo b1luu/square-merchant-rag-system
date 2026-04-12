@@ -1,6 +1,6 @@
-# Mosa Ops Retrieval — normalized JSONL corpus
+# Mosa Ops RAG System
 
-**Purpose:** This document describes the **domain-specific RAG** half of **Mosa Ops Retrieval**: a **normalized JSONL** knowledge base built from PDFs, tuned for **semantic search and grounded answers** over operational content (procedures, recipes, policies). Each line is an atomic unit for **BGE + FAISS** retrieval; an optional **Ollama** step generates text **only in the context of retrieved records**.
+**Purpose:** **Mosa Ops RAG System** is the **domain-specific RAG** workflow for operations: PDFs are turned into a searchable **JSONL knowledge base** (one atomic record per line) for **BGE + FAISS** retrieval and **grounded** staff answers. An optional **Ollama** step generates text **only in the context of retrieved records**.
 
 ## Why this structure (vs. raw PDF chunking)
 
