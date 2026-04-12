@@ -1,9 +1,0 @@
-{
-  "schema": 1,
-  "jsonl": "/Users/brandon/bge/normalized_mosa_rag.jsonl",
-  "mtime_ns": 1775949351752410721,
-  "size_bytes": 114076,
-  "model_name": "BAAI/bge-base-en-v1.5",
-  "num_chunks": 137,
-  "index_name": "index.faiss"
-}
