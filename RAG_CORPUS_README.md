@@ -18,15 +18,15 @@ Put inputs under `data/` (or another directory you pass to the builder). Which f
 From the repo root (with dependencies installed):
 
 ```bash
-python -m mosa_rag.build_corpus --data-dir data --out normalized_mosa_rag.jsonl
+python -m mosa_rag.build_corpus --data-dir data --out corpus.jsonl
 ```
 
-Adjust `--out` if you use a different corpus filename.
+Use any output path you prefer; CLI tools accept **`--jsonl`** when the default file in the scripts does not match yours.
 
 ## Validate
 
 ```bash
-python validate_mosa_rag_jsonl.py normalized_mosa_rag.jsonl
+python validate_mosa_rag_jsonl.py corpus.jsonl
 ```
 
 ## Semantic search (BGE + FAISS, no LLM)
@@ -34,8 +34,8 @@ python validate_mosa_rag_jsonl.py normalized_mosa_rag.jsonl
 After the JSONL exists:
 
 ```bash
-python retrieve_mosa_rag_jsonl.py "How do I cook boba in the rice cooker?"
-python retrieve_mosa_rag_jsonl.py "closing checklist for the register" --top-k 5
+python retrieve_mosa_rag_jsonl.py "What are the opening steps for the back of house?" --jsonl corpus.jsonl
+python retrieve_mosa_rag_jsonl.py "closing checklist for the register" --jsonl corpus.jsonl --top-k 5
 ```
 
 Use `--raw-query` to omit the BGE query-instruction prefix (for A/B comparison). The embedding model may download on first use.
@@ -49,8 +49,8 @@ Re-embedding the full corpus every run is optional. By default, an on-disk cache
 Curated query sets under `eval_sets/` (filenames may vary by checkout):
 
 ```bash
-python evaluate_mosa_rag_jsonl.py
-python evaluate_mosa_rag_jsonl.py eval_sets/mosa_rag_gap_probes.jsonl --top-k 3
+python evaluate_mosa_rag_jsonl.py --jsonl corpus.jsonl
+python evaluate_mosa_rag_jsonl.py eval_sets/your_queries.jsonl --jsonl corpus.jsonl --top-k 3
 ```
 
 ## LLM answers on top of retrieval
@@ -61,14 +61,14 @@ Inspect the composed prompt without calling the model:
 
 ```bash
 export OLLAMA_PROVIDER=ollama_local
-python answer_mosa_rag_jsonl.py "What is the sick leave policy?" --dry-run
+python answer_mosa_rag_jsonl.py "What is the sick leave policy?" --jsonl corpus.jsonl --dry-run
 ```
 
 Run a live answer (Ollama must be running; pull your model first, e.g. `ollama pull llama3.2`):
 
 ```bash
 export OLLAMA_PROVIDER=ollama_local
-python answer_mosa_rag_jsonl.py "What is the sick leave policy?" --show-context
+python answer_mosa_rag_jsonl.py "What is the sick leave policy?" --jsonl corpus.jsonl --show-context
 ```
 
 Remote or self-hosted Ollama (same HTTP API, e.g. another machine or a container):
@@ -77,7 +77,7 @@ Remote or self-hosted Ollama (same HTTP API, e.g. another machine or a container
 export OLLAMA_PROVIDER=ollama_remote
 export OLLAMA_BASE_URL=https://your-ollama-host.example.com
 export OLLAMA_MODEL=llama3.2
-python answer_mosa_rag_jsonl.py "Your question"
+python answer_mosa_rag_jsonl.py "Your question" --jsonl corpus.jsonl
 ```
 
 Useful environment variables:
