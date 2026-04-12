@@ -6,6 +6,53 @@
 
 ---
 
+## Quick Demo
+
+With **Ollama** running locally and `OLLAMA_PROVIDER=ollama_local`:
+
+```bash
+export OLLAMA_PROVIDER=ollama_local
+python answer_mosa_rag_jsonl.py "What happens if I am sick?"
+```
+
+**Output (illustrative; exact text depends on retrieved records and model):**
+
+```
+Answer
+--------------------------------------------------------------------------------
+Employees must notify their manager and find shift coverage per the attendance
+and sick-leave rules in the retrieved records. (Details follow the cited policy
+lines.) A short Sources: line lists the record titles used.
+```
+
+Use `--dry-run` to print the composed prompt without calling the model, or `--show-context` to print the retrieved passages after the answer.
+
+---
+
+## Why This Matters
+
+Store employees still rely on **manual lookup** for:
+
+- **Recipes** — build steps, ratios, and modifiers scattered across bar and kitchen SOPs  
+- **Policies** — benefits, attendance, conduct, and POS rules buried in long PDFs  
+- **Procedures** — opening, cleaning, inspection, and incident flows that are easy to misremember under rush  
+
+This system **compresses lookup from minutes to seconds**: one question, ranked evidence, and an optional **grounded** summary instead of tab-hunting or guessing under time pressure.
+
+---
+
+## Corpus
+
+- **~100+ structured entries** in a typical single-store build; the **reference** `normalized_mosa_rag.jsonl` in this repo is **~130** lines after normalization.  
+- **Includes:**  
+  - **Drink recipes** — builds, tea volumes, modifiers, and bar execution detail  
+  - **Employee policies** — handbook-style rules (attendance, conduct, benefits)  
+  - **Operational procedures** — kitchen batch prep, cleaning, POS, events, and troubleshooting  
+
+Each line is one **atomic record** with `retrieval_text` plus typed fields where applicable, designed for **dense retrieval** rather than raw page dumps.
+
+---
+
 ## Architecture
 
 End-to-end pipeline:
