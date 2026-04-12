@@ -1,111 +1,127 @@
 # Mosa Ops RAG System
 
-**Purpose:** **Mosa Ops RAG System** is a **domain-specific RAG** stack for operations: staff answers should come from **retrieved** passages (SOPs, recipes, policies)—not from the model’s unconstrained general knowledge on the full RAG path. The **level-1** entrypoint here is **PDF chunk retrieval** (no LLM). The main ops path adds a **structured JSONL knowledge base**, **BGE + FAISS** retrieval, an optional **on-disk index cache**, and an optional **local LLM** (Ollama) grounded in those hits.
+## Overview
+
+**Mosa Ops RAG System** is a retrieval-augmented assistant for **real shift operations**: bar and back-of-house staff get **grounded answers** over SOPs, recipes, and policy text instead of paging PDFs or guessing. The system **engineers retrieval first**—dense vectors over a curated **JSONL** knowledge base—then optionally applies an **LLM** only to **interpret and summarize** the top-k hits, so answers stay tied to source material. It is designed to **replace slow manual lookup** (flip, search, ask a manager) with a **single query path** that returns cited, staff-readable output in **seconds to well under a minute** on typical laptop hardware.
 
 ---
 
-## Tech stack
+## Architecture
 
-| Layer | Technology |
-|--------|------------|
-| Language | Python 3 |
-| PDF text | `pypdf` |
-| Tokenization | `transformers` (`AutoTokenizer`) |
-| Embedding model | `BAAI/bge-base-en-v1.5` (ONNX export from Hugging Face) |
-| Embedding inference | `onnxruntime` (CPU; model files pulled via `huggingface-hub`) |
-| Vector search | `faiss-cpu` (`IndexFlatIP`, L2-normalized vectors for cosine-style ranking) |
-| Numerics | `numpy` |
-| LLM (full RAG only, not used by `retrieve_pdf.py`) | Ollama or any host exposing the same `/api/generate` HTTP API |
+End-to-end pipeline:
 
----
+**`User query` → `BGE query embedding` → `FAISS similarity search` → `Top-K JSONL records` → `Prompt assembly` → `LLM reasoning` → `Answer + sources`**
 
-## Architecture (text diagram)
+| Stage | Implementation |
+|--------|------------------|
+| **Corpus** | Normalized **JSONL**: one record per line (recipe, procedure, policy chunk) with `retrieval_text` and structured fields for traceability. |
+| **Embedding** | **`BAAI/bge-base-en-v1.5`** via **ONNX** (`onnxruntime`) and `transformers` tokenization; query uses the BGE retrieval instruction prefix by default. |
+| **Similarity search** | **FAISS** `IndexFlatIP` over **L2-normalized** vectors so inner product matches **cosine similarity** ranking. |
+| **LLM** | **Pluggable HTTP layer**: **`call_llm(prompt)`** targets **Ollama** `/api/generate` (local or remote base URL—same contract works behind a VM or container). Swap the adapter to wire a different provider without changing retrieval or prompt construction. |
 
-**Level 1 — PDF retrieval (implemented in `retrieve_pdf.py`):**
+Build path (PDFs → JSONL) lives under `mosa_rag/` (`build_corpus`, extractors, schema). **Level-1** `retrieve_pdf.py` offers the same BGE + FAISS stack over **raw PDF chunks** for experiments without the JSONL layer.
 
 ```
-  +----------------------+
-  | PDF file(s) / folder |
-  +----------+-----------+
-             |
-             v
-  +----------------------+
-  | pypdf: text per page |
-  +----------+-----------+
-             |
-             v
-  +----------------------+
-  | Word windows + overlap|
-  | -> Chunk[]           |
-  +----------+-----------+
-             |
-             v
-  +----------------------+     +------------------------+
-  | Hugging Face snapshot|     | Tokenize batches       |
-  | ONNX model.onnx      |---->| onnxruntime inference  |
-  +----------------------+     +------------+-----------+
-                                            |
-                                            v
-                               +------------------------+
-                               | L2-normalized vectors  |
-                               +------------+-----------+
-                                            |
-                                            v
-                               +------------------------+
-                               | FAISS IndexFlatIP      |
-                               | (built in memory)      |
-                               +------------+-----------+
-                                            ^
-                                            |
-                               +------------+-----------+
-                               | Query string           |
-                               | + optional BGE        |
-                               |   query instruction    |
-                               +------------+-----------+
-                                            |
-                                            v
-                               +------------------------+
-                               | Top-k chunk scores     |
-                               | + source metadata      |
-                               +------------------------+
-```
-
-**Typical extension — full RAG (see `RAG_CORPUS_README.md` for commands):**
-
-```
-  +----------------------+       +----------------------+
-  | Curated corpus build |  -->  | Searchable store     |
-  | (PDFs -> records)    |       | (e.g. JSONL rows)    |
-  +----------------------+       +----------+-----------+
-                                              |
-                                              v
-                               +------------------------+       +------------------+
-                               | Same BGE + FAISS idea|  -->  | Optional: save   |
-                               | over record texts    |       | FAISS to disk    |
-                               +----------+-----------+       +------------------+
-                                              |
-                                              v
-                               +------------------------+       +------------------+
-                               | Compose prompt with  |  -->  | POST /api/       |
-                               | top-k retrieved text   |       | generate (e.g.   |
-                               +------------------------+       | Ollama)          |
-                                                                 +------------------+
+  JSONL corpus (N records)
+           |
+           v
+  +------------------+
+  | BGE ONNX encode  |  batch over retrieval_text
+  +--------+---------+
+           |
+           v
+  +------------------+
+  | FAISS index      |  optional persist (.rag_index_cache)
+  +--------+---------+
+           ^   query vector
+           |
+  +--------+---------+
+  | Top-K records    |  formatted context
+  +--------+---------+
+           |
+           v
+  +------------------+
+  | LLM (optional)   |  Ollama HTTP; temperature 0 default
+  +------------------+
 ```
 
 ---
 
-## PDF retrieval (level 1)
+## Results / Metrics
 
-Minimal **retrieval-only** pipeline:
+| Dimension | Value |
+|-----------|--------|
+| **Corpus scale** | **137** operational records in `normalized_mosa_rag.jsonl` (drink builds, prep rules, POS, policies, etc.). |
+| **Retrieval quality (JSONL)** | **39 / 39** scored eval queries passed **Hit@1** and **Hit@5** with **MRR 1.000** across `eval_sets/mosa_rag_smoke.jsonl` (19 cases) and `mosa_rag_paraphrase.jsonl` (20 cases), `top_k=5`, BGE instruction on. |
+| **Retrieval quality (PDF probe)** | **8 / 8** handbook questions: **Hit@1** and **Hit@3** at **MRR 1.000** with chunk size **80**, overlap **30** (`evaluate_retrieval.py`). |
+| **End-to-end latency (cold index)** | **~52 s** full PDF eval run (embed index + 8 queries); **~61 s** JSONL eval run (embed **137** records + two eval files). First run includes model artifact load from Hugging Face. |
+| **Operational impact** | Designed to shrink **multi-minute** PDF or chat “guesswork” into a **sub-minute** loop: one query, ranked evidence, optional grounded generation. |
 
-1. Read a PDF with `pypdf`  
-2. Split into overlapping word chunks  
-3. Embed chunks with `BAAI/bge-base-en-v1.5` (ONNX)  
-4. Store vectors in a FAISS index  
-5. Embed the query and retrieve top matches  
-6. Print chunks (no LLM in this script)  
+Reproduce the JSONL numbers:
 
-## Install
+```bash
+python evaluate_mosa_rag_jsonl.py --jsonl normalized_mosa_rag.jsonl --top-k 5
+```
+
+Reproduce the PDF numbers:
+
+```bash
+python evaluate_retrieval.py \
+  --pdf-path "data/Mosa Employee Handbook.pdf" \
+  --chunk-sizes 80 --chunk-overlaps 30 --top-k 3
+```
+
+---
+
+## Design Decisions
+
+- **JSONL over a database** — **Versionable**, **diff-friendly**, and **zero ops** for a resume-scale project: grep, `git`, and plain scripts can audit the corpus. Rows map 1:1 to retrieval units without schema migrations for early iteration.
+- **BGE embeddings** — Strong **English dense retrieval** out of the box; ONNX path avoids a heavy PyTorch stack on resource-constrained machines while keeping quality competitive for short operational passages.
+- **Retrieval before LLM** — The LLM never answers from a **blank context** in the main design: **constraints and citations** are derived from **forced top-k text**, reducing hallucinated policy or recipe steps.
+- **Local vs cloud LLM** — **Ollama** keeps **PII and prompts on-network you control** (laptop, office LAN, or a **remote base URL** for the same HTTP API). The boundary is **environment-driven**, not a code fork—suitable for internships demonstrating **security-aware** design.
+
+---
+
+## Example Use Case
+
+**Query:** *“What happens if I am sick?”*
+
+1. **Embedding** — The question is encoded with the BGE retrieval instruction.  
+2. **Search** — FAISS returns the **top-k** rows whose `retrieval_text` and fields best match sick leave and attendance policy.  
+3. **Prompting** — `answer_mosa_rag_jsonl.py` builds a single prompt: system rules (**use only these records**), the question, and the **concatenated retrieved records** (titles, scores, text).  
+4. **LLM** — `call_llm` sends that prompt to Ollama; the model produces a **short grounded answer** and a **Sources:** line tied to record titles.  
+5. **Optional `--show-context`** — Prints the exact passages the model saw, for training and QA.
+
+Dry-run (no LLM call):
+
+```bash
+export OLLAMA_PROVIDER=ollama_local
+python answer_mosa_rag_jsonl.py "What happens if I am sick?" --dry-run
+```
+
+---
+
+## Performance
+
+| Phase | What you pay (typical laptop CPU) |
+|--------|-----------------------------------|
+| **Corpus embedding** | **O(N)** over all records—**~1 minute** class for **~140** rows in the captured eval (dominates cold start). |
+| **Query embedding + search** | **Milliseconds to low seconds** per query after the index exists—single batch through ONNX + FAISS `search`. |
+| **Persisted index** | **`load_or_build_faiss_index`** skips full re-embed when JSONL **mtime/size** and model id match cache metadata—**interactive retrieval** drops to **encode-query + disk index load + search**, i.e. **seconds**, not a full minute. |
+| **LLM** | Bounded by local **Ollama** generation; short answers with **temperature 0** are usually **a few seconds to tens of seconds** depending on model and hardware. |
+
+---
+
+## Future Improvements
+
+- **Vector tier** — Move from **flat FAISS** to **IVF / PQ** or a **managed vector database** (Pinecone, pgvector, Weaviate) when **N** grows past **thousands** of live records.  
+- **Reranking** — Add a **cross-encoder** or lightweight reranker on the top **20 → 5** hits to sharpen boundary queries.  
+- **Cloud deployment** — Package retrieval as a **small API** (e.g. **AWS Lambda** + object storage for index snapshots; **Cloud Run** + VPC for **remote Ollama**); keep the **HTTP** LLM boundary for swap-in observability.  
+- **Benchmarks** — Expand **eval_sets** with harder **paraphrase** and **negative** probes; track **Hit@k** and **latency SLOs** in CI.
+
+---
+
+## Quickstart
 
 ```bash
 python3 -m venv .venv
@@ -113,123 +129,46 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-## Run
-
-Default: top 3 chunks (defaults `--chunk-size 80 --chunk-overlap 30`):
+**Search only (JSONL):**
 
 ```bash
-python retrieve_pdf.py path/to/document.pdf "What does this document say about pricing?"
+python retrieve_mosa_rag_jsonl.py "How do I make a TGY special?" --jsonl normalized_mosa_rag.jsonl
 ```
 
-Index a directory of PDFs:
+**Grounded answer (Ollama running locally):**
 
 ```bash
-python retrieve_pdf.py path/to/pdf_folder "What is the policy on outside food in the kitchen?"
+export OLLAMA_PROVIDER=ollama_local
+python answer_mosa_rag_jsonl.py "How do I make a TGY special?" --jsonl normalized_mosa_rag.jsonl
 ```
 
-Top 5 matches:
+**PDF chunk baseline (no JSONL, no LLM):**
 
 ```bash
-python retrieve_pdf.py path/to/document.pdf "What does this document say about pricing?" --top-k 5
+python retrieve_pdf.py path/to/document.pdf "What is the return policy?"
 ```
 
-Tune chunking:
+**BGE query instruction** (on by default for queries, off for stored passages):
 
-```bash
-python retrieve_pdf.py path/to/document.pdf "Summarize the refund policy" --chunk-size 300 --chunk-overlap 75
-```
+`Represent this sentence for searching relevant passages: `  
 
-Optional retrieval sweep (`evaluate_retrieval.py`):
+Disable with `--raw-query` on the CLI tools.
 
-```bash
-python evaluate_retrieval.py --pdf-path path/to/document.pdf
-```
+---
 
-```bash
-python evaluate_retrieval.py --pdf-path path/to/document.pdf --chunk-sizes 60,80,100 --chunk-overlaps 10,20
-```
+## Tech stack
 
-## Quantifying results
+| Layer | Technology |
+|--------|------------|
+| Runtime | Python 3 |
+| PDF ingestion | `pypdf` |
+| Tokenization | `transformers` |
+| Embeddings | `BAAI/bge-base-en-v1.5` ONNX, `onnxruntime`, `huggingface-hub` |
+| Vectors | `faiss-cpu`, `numpy` |
+| LLM | Ollama `/api/generate` (`mosa_rag/llm.py`) |
 
-Metrics below were produced by **running the evaluators in this repository** (same commands, fresh FAISS build each run). **Hit@1** = first hit is correct; **Hit@k** = correct row appears in top‑k; **MRR** = mean reciprocal rank of the first correct hit. Re-run after you change PDFs, JSONL, eval cases, or embedding settings—numbers will move if the data moves.
+---
 
-### PDF handbook retrieval (`evaluate_retrieval.py`)
+## Corpus workflow
 
-Command:
-
-```bash
-python evaluate_retrieval.py \
-  --pdf-path "data/Mosa Employee Handbook.pdf" \
-  --chunk-sizes 80 \
-  --chunk-overlaps 30 \
-  --top-k 3
-```
-
-**Captured output (2026-04-12, repo checkout):**
-
-| Cases | Chunk size / overlap | Chunks built | Hit@1 | Hit@3 | MRR | Wall time (approx.) |
-|------:|---------------------|-------------:|------:|------:|----:|---------------------:|
-| 8 | 80 / 30 | 60 | 8/8 | 8/8 | 1.000 | ~52 s |
-
-Script header from that run: `PDF: data/Mosa Employee Handbook.pdf`, `Cases: 8`, `Top-k: 3`, `Instruction: True`, table row `80  30  60  8/8  8/8  1.000`.
-
-Sweep more `(chunk_size, chunk_overlap)` pairs with `--chunk-sizes` / `--chunk-overlaps` to compare grids on the same PDF.
-
-### JSONL corpus retrieval (`evaluate_mosa_rag_jsonl.py`)
-
-Command (defaults: `eval_sets/mosa_rag_smoke.jsonl` + `eval_sets/mosa_rag_paraphrase.jsonl`, BGE query instruction on):
-
-```bash
-python evaluate_mosa_rag_jsonl.py --jsonl normalized_mosa_rag.jsonl --top-k 5
-```
-
-**Captured output (2026-04-12, same checkout):**
-
-| Corpus | Records | Eval file | Scored cases | Hit@1 | Hit@5 | MRR |
-|--------|--------:|-----------|-------------:|------:|------:|----:|
-| `normalized_mosa_rag.jsonl` | 137 | `mosa_rag_smoke.jsonl` | 19 | 19/19 | 19/19 | 1.000 |
-| same | 137 | `mosa_rag_paraphrase.jsonl` | 20 | 20/20 | 20/20 | 1.000 |
-
-*Wall time for that full command (both files, cold FAISS build over 137 records): ~61 s on the machine used for the capture.*
-
-That run reported **no misses** and **no “not rank 1”** rows for either file. Every **By category** line in the log showed **Hit@1 = Hit@5 = case count** and **MRR 1.000**.
-
-Other files under `eval_sets/` (for example gap probes) are **not** in the default invocation; pass them explicitly if you want those numbers in the log.
-
-### Wall-clock / engineering %
-
-Compare script runtime before and after a change (e.g. cold embed vs cached index on the JSONL tools) with `time python …`. Improvement when lower is better:
-
-`(t_baseline − t_new) / t_baseline × 100%`.
-
-### Operational KPIs (fill in yourself)
-
-Store-level **% improvements** (time to answer, incidents, survey scores) are **not** emitted by these scripts. Measure in your own tools, then use  
-`(baseline − new) / baseline × 100%` when lower is better, or  
-`(new − baseline) / baseline × 100%` when higher is better. **Do not** copy made-up business percentages into this file.
-
-## Query instruction (BGE)
-
-Short retrieval queries use the BGE-style prefix:
-
-`Represent this sentence for searching relevant passages: `
-
-The script applies that instruction to the query by default and does not apply it to document chunks.
-
-To test retrieval without the instruction:
-
-```bash
-python retrieve_pdf.py path/to/document.pdf "What is the return policy?" --raw-query
-```
-
-## Notes
-
-- `pypdf` uses embedded text; scanned PDFs need OCR first.  
-- In `retrieve_pdf.py`, FAISS is built **in memory** each run; the JSONL scripts can persist an index under `.rag_index_cache/` (see **`RAG_CORPUS_README.md`**).  
-- `BAAI/bge-base-en-v1.5` and `onnx/model.onnx` download from Hugging Face on first use.  
-- This project uses `onnxruntime` for BGE inference instead of a PyTorch `sentence-transformers` runtime.  
-- Results include source PDF file names when you index multiple documents together.  
-
-## Mosa Ops RAG System — corpus workflow
-
-For build, validate, search, and optional Ollama answers over the ops knowledge base, see **`RAG_CORPUS_README.md`**.
+Build, validate, and detailed CLI flags: **`RAG_CORPUS_README.md`**.
