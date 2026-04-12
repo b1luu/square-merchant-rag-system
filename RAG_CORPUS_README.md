@@ -1,6 +1,6 @@
-# Normalized JSONL corpus for RAG
+# Mosa Ops Retrieval — normalized JSONL corpus
 
-This repository can hold a **normalized JSONL knowledge base** built from your own PDFs. Records are structured for **dense retrieval** (e.g. BGE + FAISS) by storing **atomic operational units** instead of raw page-level text.
+**Purpose:** This document describes the **domain-specific RAG** half of **Mosa Ops Retrieval**: a **normalized JSONL** knowledge base built from PDFs, tuned for **semantic search and grounded answers** over operational content (procedures, recipes, policies). Each line is an atomic unit for **BGE + FAISS** retrieval; an optional **Ollama** step generates text **only in the context of retrieved records**.
 
 ## Why this structure (vs. raw PDF chunking)
 
