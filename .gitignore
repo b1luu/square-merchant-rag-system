@@ -3,3 +3,4 @@ __pycache__/
 .DS_Store
 data
 .venv311/
+.rag_index_cache/

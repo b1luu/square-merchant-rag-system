@@ -1,16 +1,13 @@
-# PDF Retrieval Only
+# PDF retrieval (level 1)
 
-This is a minimal level-1 retrieval pipeline:
+Minimal **retrieval-only** pipeline:
 
-1. Read a PDF with `pypdf`
-2. Split it into overlapping chunks
-3. Embed the chunks with `BAAI/bge-base-en-v1.5`
-4. Store the embeddings in a FAISS index
-5. Embed the query
-6. Retrieve the top matching chunks
-7. Print them out
-
-No LLM is used here.
+1. Read a PDF with `pypdf`  
+2. Split into overlapping word chunks  
+3. Embed chunks with `BAAI/bge-base-en-v1.5` (ONNX)  
+4. Store vectors in a FAISS index  
+5. Embed the query and retrieve top matches  
+6. Print chunks (no LLM in this script)  
 
 ## Install
 
@@ -22,53 +19,47 @@ pip install -r requirements.txt
 
 ## Run
 
-Default output is the top 3 chunks:
+Default: top 3 chunks:
 
 ```bash
-python retrieve_pdf.py path/to/document.pdf "What does this PDF say about pricing?"
+python retrieve_pdf.py path/to/document.pdf "What does this document say about pricing?"
 ```
 
-The current defaults are tuned for the handbook and use `--chunk-size 80 --chunk-overlap 30`.
-
-You can also index a whole directory of PDFs:
+You can index a directory of PDFs:
 
 ```bash
-python retrieve_pdf.py data "What is the policy on outside food in the kitchen?"
+python retrieve_pdf.py path/to/pdf_folder "What is the policy on outside food in the kitchen?"
 ```
 
-If you want the top 5 instead:
+More matches:
 
 ```bash
-python retrieve_pdf.py path/to/document.pdf "What does this PDF say about pricing?" --top-k 5
+python retrieve_pdf.py path/to/document.pdf "Summarize the refund policy" --top-k 5
 ```
 
-You can also tune chunking:
+Tune chunking:
 
 ```bash
 python retrieve_pdf.py path/to/document.pdf "Summarize the refund policy" --chunk-size 300 --chunk-overlap 75
 ```
 
-You can compare chunk settings against the handbook with:
+Optional evaluation driver (point at your own PDF):
 
 ```bash
-python evaluate_retrieval.py --pdf-path "data/Mosa Employee Handbook.pdf"
+python evaluate_retrieval.py --pdf-path path/to/document.pdf
 ```
-
-Or sweep a smaller custom grid:
 
 ```bash
-python evaluate_retrieval.py --pdf-path "data/Mosa Employee Handbook.pdf" --chunk-sizes 60,80,100 --chunk-overlaps 10,20
+python evaluate_retrieval.py --pdf-path path/to/document.pdf --chunk-sizes 60,80,100 --chunk-overlaps 10,20
 ```
 
-## Why the query instruction is used
+## Query instruction (BGE)
 
-The BGE model card recommends adding this instruction to short retrieval queries:
+Short retrieval queries use the BGE-style prefix:
 
 `Represent this sentence for searching relevant passages: `
 
-The script applies that instruction to the query by default and does not apply it to document chunks.
-
-If you want to test retrieval without the instruction:
+Applied to the query by default, not to document chunks. To disable:
 
 ```bash
 python retrieve_pdf.py path/to/document.pdf "What is the return policy?" --raw-query
@@ -76,8 +67,12 @@ python retrieve_pdf.py path/to/document.pdf "What is the return policy?" --raw-q
 
 ## Notes
 
-- `pypdf` extracts embedded text. If your PDF is scanned images, you need OCR first.
-- FAISS is built in memory in this version. You can save/load the index later once you move beyond level 1.
-- `BAAI/bge-base-en-v1.5` and its `onnx/model.onnx` file will download from Hugging Face the first time you run the script.
-- This version uses `onnxruntime` directly instead of the local `sentence-transformers` / `torch` runtime because that stack was unstable on this Intel macOS environment.
-- Retrieval results now include the source PDF file name, which matters once you index multiple documents together.
+- `pypdf` uses embedded text; scanned PDFs need OCR first.  
+- FAISS is built in memory in `retrieve_pdf.py`; the JSONL answer/search scripts can persist an index under `.rag_index_cache/` (see `RAG_CORPUS_README.md`).  
+- The embedding model downloads from Hugging Face on first use.  
+- This project uses `onnxruntime` for BGE inference.  
+- Results include source file names when you index multiple PDFs together.  
+
+## JSONL RAG (retrieval + optional local LLM)
+
+For a normalized JSONL workflow (corpus build, validate, search, optional Ollama answers), see **`RAG_CORPUS_README.md`**.

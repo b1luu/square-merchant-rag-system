@@ -10,9 +10,10 @@ import sys
 import textwrap
 from pathlib import Path
 
+from mosa_rag.faiss_cache import default_cache_root, load_or_build_faiss_index
 from mosa_rag.llm import DEFAULT_OLLAMA_MODEL, OLLAMA_LOCAL, OLLAMA_REMOTE, call_llm, resolve_ollama_generate_url
 from mosa_rag.retrieve_jsonl import build_chunks, load_rows
-from retrieve_pdf import MODEL_NAME, build_faiss_index, retrieve
+from retrieve_pdf import MODEL_NAME, retrieve
 
 
 def format_record(record: dict, score: float) -> str:
@@ -93,7 +94,25 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--show-context", action="store_true", help="Print retrieved records after the answer")
     parser.add_argument("--dry-run", action="store_true", help="Do not call the API; print the prompt payload")
+    parser.add_argument(
+        "--cache-dir",
+        type=Path,
+        default=None,
+        help="Directory for FAISS cache (default: BGE_RAG_CACHE_DIR env, else .rag_index_cache next to --jsonl)",
+    )
+    parser.add_argument("--no-cache", action="store_true", help="Always rebuild embeddings and FAISS index")
     return parser.parse_args()
+
+
+def _resolve_cache_root(args: argparse.Namespace, jsonl: Path) -> Path | None:
+    if args.no_cache:
+        return None
+    if args.cache_dir is not None:
+        return args.cache_dir
+    env = os.getenv("BGE_RAG_CACHE_DIR")
+    if env:
+        return Path(env)
+    return default_cache_root(jsonl)
 
 
 def main() -> None:
@@ -107,7 +126,14 @@ def main() -> None:
         sys.exit(f"error: {exc}")
 
     chunks = build_chunks(rows, args.jsonl)
-    encoder, index, _ = build_faiss_index(chunks=chunks, model_name=args.model_name)
+    cache_root = _resolve_cache_root(args, args.jsonl)
+    encoder, index, _ = load_or_build_faiss_index(
+        chunks=chunks,
+        model_name=args.model_name,
+        source_jsonl=args.jsonl,
+        cache_root=cache_root,
+        no_cache=args.no_cache,
+    )
     results = retrieve(
         encoder=encoder,
         index=index,

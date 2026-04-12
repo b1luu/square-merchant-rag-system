@@ -40,6 +40,14 @@ def resolve_ollama_generate_url() -> str:
     return f"{base}/api/generate"
 
 
+def _ollama_options() -> dict[str, float]:
+    """Ollama /api/generate `options`; defaults favor stable RAG answers."""
+    raw = os.getenv("OLLAMA_TEMPERATURE")
+    if raw is not None and raw.strip() != "":
+        return {"temperature": float(raw)}
+    return {"temperature": 0.0}
+
+
 def call_llm(prompt: str) -> str:
     """
     Send `prompt` to Ollama and return the model's plain-text reply.
@@ -48,10 +56,12 @@ def call_llm(prompt: str) -> str:
       OLLAMA_PROVIDER — 'ollama_local' (http://localhost:11434) or 'ollama_remote' (OLLAMA_BASE_URL)
       OLLAMA_BASE_URL — required for ollama_remote (e.g. https://ollama.example.com or a Cloud Run URL)
       OLLAMA_MODEL — model tag (default: llama3.2)
+      OLLAMA_TEMPERATURE — sampling temperature (default: 0.0 for repeatable answers; raise for variety)
     """
     url = resolve_ollama_generate_url()
     model = _effective_model()
-    payload = json.dumps({"model": model, "prompt": prompt, "stream": False}).encode("utf-8")
+    body: dict = {"model": model, "prompt": prompt, "stream": False, "options": _ollama_options()}
+    payload = json.dumps(body).encode("utf-8")
     req = request.Request(
         url,
         data=payload,
