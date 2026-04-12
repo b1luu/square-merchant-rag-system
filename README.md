@@ -149,6 +149,59 @@ python evaluate_retrieval.py --pdf-path path/to/document.pdf
 python evaluate_retrieval.py --pdf-path path/to/document.pdf --chunk-sizes 60,80,100 --chunk-overlaps 10,20
 ```
 
+## Quantifying results
+
+### Retrieval quality (reproducible in this repo)
+
+The evaluators report **Hit@1** (correct unit ranked first), **Hit@k** (correct unit in the top‑k list), and **MRR** (mean reciprocal rank of the first correct hit). Sweep chunk settings to compare configurations on the same PDF and question set.
+
+**Example (bundled PDF eval):** `evaluate_retrieval.py` ships with **8** fixed questions against the PDF given by **`--pdf-path`** (see the script default). With `--chunk-sizes 80 --chunk-overlaps 30 --top-k 3` and the default BGE query instruction, one representative run produced:
+
+| Eval setup | Indexed chunks | Hit@1 | Hit@k | MRR |
+|------------|----------------|-------|-------|-----|
+| 8 cases, instruction on | 60 | 8/8 | 8/8 | 1.000 |
+
+Reproduce:
+
+```bash
+python evaluate_retrieval.py --chunk-sizes 80 --chunk-overlaps 30 --top-k 3
+```
+
+Different `--pdf-path`, cases, or `top-k` will change these numbers.
+
+For the JSONL corpus path, use:
+
+```bash
+python evaluate_mosa_rag_jsonl.py --jsonl path/to/corpus.jsonl
+```
+
+That prints Hit@1, Hit@k, MRR per eval file and **by category** (see `eval_sets/`).
+
+### Wall-clock latency (engineering, not “ops %”)
+
+Compare end-to-end script time before and after a change (for example **cold** FAISS build vs **cached** index on the JSONL tools) with the shell `time` command. Report improvement as:
+
+`(t_baseline − t_new) / t_baseline × 100%` when lower time is better.
+
+### Operational impact (your numbers only)
+
+Team-level outcomes—**% fewer wrong procedures**, **% shorter time-to-documented answer**, **ticket reopen rate**, audit scores—depend on **how** you roll out search/RAG and **what** you measure in HR, QA, or the helpdesk. This repository does **not** compute those automatically.
+
+Use a simple table in internal reports (fill in after you have baselines):
+
+| Metric | Baseline | After rollout | Δ % |
+|--------|----------|---------------|-----|
+| Median time to first grounded answer | | | |
+| Weekly procedure / policy incidents | | | |
+| Staff survey (clarity of procedures) | | | |
+
+For any metric where **lower is better**, use  
+`(baseline − new) / baseline × 100%`.  
+For metrics where **higher is better**, use  
+`(new − baseline) / baseline × 100%`.
+
+**Do not invent** improvement percentages in this README; publish only values you have actually measured.
+
 ## Query instruction (BGE)
 
 Short retrieval queries use the BGE-style prefix:
