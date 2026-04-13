@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Iterator
 from urllib import error, request
 
 # Provider names (OLLAMA_PROVIDER). Same HTTP contract works for GCP-hosted Ollama
@@ -48,6 +49,22 @@ def _ollama_options() -> dict[str, float]:
     return {"temperature": 0.0}
 
 
+def _build_ollama_request(prompt: str, *, stream: bool) -> request.Request:
+    body: dict = {
+        "model": _effective_model(),
+        "prompt": prompt,
+        "stream": stream,
+        "options": _ollama_options(),
+    }
+    payload = json.dumps(body).encode("utf-8")
+    return request.Request(
+        resolve_ollama_generate_url(),
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+
+
 def call_llm(prompt: str) -> str:
     """
     Send `prompt` to Ollama and return the model's plain-text reply.
@@ -58,16 +75,7 @@ def call_llm(prompt: str) -> str:
       OLLAMA_MODEL — model tag (default: llama3.2)
       OLLAMA_TEMPERATURE — sampling temperature (default: 0.0 for repeatable answers; raise for variety)
     """
-    url = resolve_ollama_generate_url()
-    model = _effective_model()
-    body: dict = {"model": model, "prompt": prompt, "stream": False, "options": _ollama_options()}
-    payload = json.dumps(body).encode("utf-8")
-    req = request.Request(
-        url,
-        data=payload,
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
+    req = _build_ollama_request(prompt, stream=False)
     try:
         with request.urlopen(req, timeout=300) as resp:
             body = json.loads(resp.read().decode("utf-8"))
@@ -81,3 +89,31 @@ def call_llm(prompt: str) -> str:
     if not isinstance(text, str) or not text.strip():
         raise RuntimeError(f"unexpected Ollama response (no 'response' text): {body!r}")
     return text.strip()
+
+
+def stream_llm(prompt: str) -> Iterator[str]:
+    """Yield plain-text response chunks from Ollama as they arrive."""
+    req = _build_ollama_request(prompt, stream=True)
+    try:
+        resp = request.urlopen(req, timeout=120)
+    except error.HTTPError as exc:
+        err_body = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"Ollama HTTP error ({exc.code}): {err_body}") from exc
+    except error.URLError as exc:
+        raise RuntimeError(f"Ollama request failed: {exc}") from exc
+
+    def _iter_chunks() -> Iterator[str]:
+        with resp:
+            for raw_line in resp:
+                line = raw_line.decode("utf-8", errors="replace").strip()
+                if not line:
+                    continue
+                try:
+                    body = json.loads(line)
+                except json.JSONDecodeError as exc:
+                    raise RuntimeError(f"unexpected Ollama stream payload: {line!r}") from exc
+                text = body.get("response")
+                if isinstance(text, str) and text:
+                    yield text
+
+    return _iter_chunks()

@@ -6,10 +6,12 @@ import argparse
 import os
 import sys
 import textwrap
+from dataclasses import asdict
 from pathlib import Path
 
 from mosa_rag.faiss_cache import default_cache_root, load_or_build_faiss_index
 from mosa_rag.retrieve_jsonl import build_chunks, load_rows
+from mosa_rag.runtime import assess_retrieval_confidence
 from retrieve_pdf import MODEL_NAME, Chunk, retrieve
 
 
@@ -55,9 +57,19 @@ def main() -> None:
         cache_root=cache_root,
         no_cache=a.no_cache,
     )
-    for rank, (score, ch) in enumerate(
-        retrieve(enc, index, chunks, a.query, min(a.top_k, len(chunks)), not a.raw_query), 1
-    ):
+    results = retrieve(enc, index, chunks, a.query, min(a.top_k, len(chunks)), not a.raw_query)
+    confidence = assess_retrieval_confidence(a.query, rows, results)
+    payload = asdict(confidence)
+    print(
+        "retrieval_confidence "
+        f"level={payload['level']} score={payload['score']:.4f} top_score={payload['top_score']:.4f} "
+        f"margin={payload['score_margin']:.4f} anchor_ratio={payload['anchor_ratio']:.4f} "
+        f"supporting_hits={payload['supporting_hits']}"
+    )
+    reasons = payload.get("reasons") or []
+    if reasons:
+        print(f"reasons: {'; '.join(reasons)}")
+    for rank, (score, ch) in enumerate(results, 1):
         r = rows[ch.chunk_id]
         print("=" * 96, f"\nrank={rank} score={score:.4f}", sep="")
         print(f"id={r.get('id','')} type={r.get('type','')} title={r.get('title','')}")

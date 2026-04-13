@@ -5,20 +5,16 @@ from __future__ import annotations
 
 import logging
 import os
-import sys
 import traceback
+from dataclasses import asdict
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from mosa_rag.faiss_cache import default_cache_root, load_or_build_faiss_index
 from mosa_rag.llm import call_llm
-from mosa_rag.retrieve_jsonl import build_chunks, load_rows
-from retrieve_pdf import MODEL_NAME, retrieve
-
-from answer_mosa_rag_jsonl import build_context, build_user_input
+from mosa_rag.runtime import ANSWER_TOP_K_DEFAULT, ResidentRetriever
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -27,22 +23,14 @@ logger = logging.getLogger(__name__)
 # Config
 # ---------------------------------------------------------------------------
 JSONL_PATH = Path(os.getenv("RAG_JSONL", "normalized_mosa_rag.jsonl"))
-TOP_K = int(os.getenv("RAG_TOP_K", "5"))
+TOP_K = int(os.getenv("RAG_TOP_K", str(ANSWER_TOP_K_DEFAULT)))
 
 # ---------------------------------------------------------------------------
-# Pre-load corpus + FAISS index once at startup
+# Pre-load corpus + FAISS index once at startup via ResidentRetriever
 # ---------------------------------------------------------------------------
-print(f"Loading corpus from {JSONL_PATH} ...", file=sys.stderr)
-_rows = load_rows(JSONL_PATH)
-_chunks = build_chunks(_rows, JSONL_PATH)
-_cache_root = default_cache_root(JSONL_PATH)
-_encoder, _index, _ = load_or_build_faiss_index(
-    chunks=_chunks,
-    model_name=MODEL_NAME,
-    source_jsonl=JSONL_PATH,
-    cache_root=_cache_root,
-)
-print(f"Ready — {len(_chunks)} records indexed.", file=sys.stderr)
+logger.info("Loading corpus from %s ...", JSONL_PATH)
+_retriever = ResidentRetriever(jsonl=JSONL_PATH)
+logger.info("Ready — %d records indexed.", len(_retriever.rows))
 
 # ---------------------------------------------------------------------------
 # App
@@ -56,13 +44,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-SYSTEM_INSTRUCTIONS = (
-    "You are answering internal Mosa Tea staff questions. "
-    "Only use the provided retrieved records—treat them as the only source of truth. "
-    "If the records are insufficient or conflicting, say so plainly. "
-    "Never present general knowledge or guesses as if they came from the records."
-)
-
 
 class ChatRequest(BaseModel):
     message: str
@@ -70,6 +51,8 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     response: str
+    confidence: dict | None = None
+    abstained: bool = False
 
 
 @app.post("/api/chat", response_model=ChatResponse)
@@ -81,34 +64,38 @@ def chat(req: ChatRequest) -> ChatResponse:
     logger.info("Query: %s", query)
 
     try:
-        results = retrieve(
-            encoder=_encoder,
-            index=_index,
-            chunks=_chunks,
-            query=query,
-            top_k=min(TOP_K, len(_chunks)),
-            use_instruction=True,
+        prompt, _prompt_ctx, _display_ctx, _results, confidence = _retriever.build_prompt_bundle(
+            query, top_k=TOP_K
         )
-        context = build_context(_rows, results)
-        user_input = build_user_input(query, context)
-        prompt = f"{SYSTEM_INSTRUCTIONS}\n\n{user_input}"
 
-        logger.info("Calling Ollama ...")
+        if confidence.should_abstain:
+            logger.info("Abstaining — confidence level=%s score=%.4f", confidence.level, confidence.score)
+            return ChatResponse(
+                response="The retrieved records don't clearly answer this question.",
+                confidence=asdict(confidence),
+                abstained=True,
+            )
+
+        logger.info("Calling Ollama (confidence level=%s score=%.4f) ...", confidence.level, confidence.score)
         answer = call_llm(prompt)
         logger.info("Ollama responded (%d chars)", len(answer) if answer else 0)
 
         if not answer:
             raise HTTPException(status_code=502, detail="Empty response from model")
 
-        return ChatResponse(response=answer)
+        return ChatResponse(response=answer, confidence=asdict(confidence))
 
     except HTTPException:
         raise
     except Exception as exc:
-        logger.error("Chat endpoint error: %s", traceback.format_exc())
+        logger.error("Chat endpoint error:\n%s", traceback.format_exc())
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 @app.get("/api/health")
-def health() -> dict[str, str]:
-    return {"status": "ok", "records": str(len(_chunks))}
+def health() -> dict:
+    return {
+        "status": "ok",
+        "records": len(_retriever.rows),
+        "top_k": TOP_K,
+    }
