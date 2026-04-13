@@ -44,6 +44,47 @@ Use `--raw-query` to omit the BGE query-instruction prefix (for A/B comparison).
 
 Re-embedding the full corpus every run is optional. By default, an on-disk cache lives next to the JSONL under `.rag_index_cache/` (or set **`BGE_RAG_CACHE_DIR`**). Use **`--no-cache`** to force a full rebuild.
 
+### Warm local API
+
+For repeated questions, avoid paying Python startup + model init on every request. `serve_mosa_rag.py` keeps the corpus, tokenizer, ONNX encoder, and FAISS index resident in memory:
+
+```bash
+python serve_mosa_rag.py --host 127.0.0.1 --port 8000
+```
+
+Health check:
+
+```bash
+curl -s http://127.0.0.1:8000/health
+```
+
+Warm retrieval request:
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/retrieve \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"what happens if i am sick?","top_k":3}'
+```
+
+Warm answer request (when Ollama is configured on the server process):
+
+```bash
+export OLLAMA_PROVIDER=ollama_local
+python serve_mosa_rag.py --host 127.0.0.1 --port 8000 --ollama-provider ollama_local
+
+curl -s -X POST http://127.0.0.1:8000/answer \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"what happens if i am sick?","top_k":3,"show_context":true}'
+```
+
+Routes:
+
+| Route | Method | Purpose |
+|-------|--------|---------|
+| `/health` | `GET` | Server status, corpus size, model info |
+| `/retrieve` | `POST` | Retrieval only; returns ranked records and server-measured latency |
+| `/answer` | `POST` | Retrieval + prompt build + `call_llm(prompt)` |
+
 ## Retrieval evaluation
 
 Curated query sets under `eval_sets/` (filenames may vary by checkout):

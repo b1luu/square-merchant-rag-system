@@ -27,6 +27,15 @@ lines.) A short Sources: line lists the record titles used.
 
 Use `--dry-run` to print the composed prompt without calling the model, or `--show-context` to print the retrieved passages after the answer.
 
+For repeated low-latency queries, run the warm local API instead of starting a fresh Python process each time:
+
+```bash
+python serve_mosa_rag.py --host 127.0.0.1 --port 8000
+curl -s -X POST http://127.0.0.1:8000/retrieve \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"what happens if i am sick?","top_k":3}'
+```
+
 ---
 
 ## Why This Matters
@@ -100,7 +109,7 @@ Build path (PDFs → JSONL) lives under `mosa_rag/` (`build_corpus`, extractors,
 |-----------|--------|
 | **Corpus scale** | **137** operational records in `normalized_mosa_rag.jsonl` (drink builds, prep rules, POS, policies, etc.). |
 | **Retrieval quality (JSONL)** | **39 / 39** scored eval queries passed **Hit@1** and **Hit@5** with **MRR 1.000** across `eval_sets/mosa_rag_smoke.jsonl` (19 cases) and `mosa_rag_paraphrase.jsonl` (20 cases), `top_k=5`, BGE instruction on. |
-| **Retrieval quality (PDF probe)** | **8 / 8** handbook questions: **Hit@1** and **Hit@3** at **MRR 1.000** with chunk size **80**, overlap **30** (`evaluate_retrieval.py`). |
+| **Retrieval quality (PDF probe)** | **8 / 8** questions on a bundled sample handbook PDF: **Hit@1** and **Hit@3** at **MRR 1.000** with chunk size **80**, overlap **30** (`evaluate_retrieval.py`). |
 | **End-to-end latency (cold index)** | **~52 s** full PDF eval run (embed index + 8 queries); **~61 s** JSONL eval run (embed **137** records + two eval files). First run includes model artifact load from Hugging Face. |
 | **Operational impact** | Designed to shrink **multi-minute** PDF or chat “guesswork” into a **sub-minute** loop: one query, ranked evidence, optional grounded generation. |
 
@@ -114,7 +123,7 @@ Reproduce the PDF numbers:
 
 ```bash
 python evaluate_retrieval.py \
-  --pdf-path "data/Mosa Employee Handbook.pdf" \
+  --pdf-path path/to/your-handbook.pdf \
   --chunk-sizes 80 --chunk-overlaps 30 --top-k 3
 ```
 
@@ -155,6 +164,7 @@ python answer_mosa_rag_jsonl.py "What happens if I am sick?" --dry-run
 | **Corpus embedding** | **O(N)** over all records—**~1 minute** class for **~140** rows in the captured eval (dominates cold start). |
 | **Query embedding + search** | **Milliseconds to low seconds** per query after the index exists—single batch through ONNX + FAISS `search`. |
 | **Persisted index** | **`load_or_build_faiss_index`** skips full re-embed when JSONL **mtime/size** and model id match cache metadata—**interactive retrieval** drops to **encode-query + disk index load + search**, i.e. **seconds**, not a full minute. |
+| **Warm API** | **`serve_mosa_rag.py`** keeps tokenizer, ONNX session, JSONL rows, and FAISS in memory, so repeated `/retrieve` calls avoid process startup and can land in the **sub-second** range on this corpus. |
 | **LLM** | Bounded by local **Ollama** generation; short answers with **temperature 0** are usually **a few seconds to tens of seconds** depending on model and hardware. |
 
 ---
@@ -179,14 +189,14 @@ pip install -r requirements.txt
 **Search only (JSONL):**
 
 ```bash
-python retrieve_mosa_rag_jsonl.py "How do I make a TGY special?" --jsonl normalized_mosa_rag.jsonl
+python retrieve_mosa_rag_jsonl.py "What is the sick leave policy?" --jsonl normalized_mosa_rag.jsonl
 ```
 
 **Grounded answer (Ollama running locally):**
 
 ```bash
 export OLLAMA_PROVIDER=ollama_local
-python answer_mosa_rag_jsonl.py "How do I make a TGY special?" --jsonl normalized_mosa_rag.jsonl
+python answer_mosa_rag_jsonl.py "What is the sick leave policy?" --jsonl normalized_mosa_rag.jsonl
 ```
 
 **PDF chunk baseline (no JSONL, no LLM):**
