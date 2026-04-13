@@ -36,6 +36,14 @@ curl -s -X POST http://127.0.0.1:8000/retrieve \
   -d '{"query":"what happens if i am sick?","top_k":3}'
 ```
 
+If Ollama is enabled on the server, stream generated answers directly to the terminal:
+
+```bash
+curl -N -s -X POST http://127.0.0.1:8000/answer \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"what happens if i am sick?","top_k":3,"stream":true}'
+```
+
 ---
 
 ## Why This Matters

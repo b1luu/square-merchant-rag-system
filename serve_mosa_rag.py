@@ -14,7 +14,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
-from mosa_rag.llm import DEFAULT_OLLAMA_MODEL, OLLAMA_LOCAL, OLLAMA_REMOTE, call_llm
+from mosa_rag.llm import DEFAULT_OLLAMA_MODEL, OLLAMA_LOCAL, OLLAMA_REMOTE, call_llm, stream_llm
 from mosa_rag.runtime import ResidentRetriever
 from retrieve_pdf import MODEL_NAME
 
@@ -125,7 +125,13 @@ class RequestHandler(BaseHTTPRequestHandler):
             self._handle_retrieve(query=query, top_k=top_k, raw_query=raw_query)
             return
         if path == "/answer":
-            self._handle_answer(query=query, top_k=top_k, raw_query=raw_query, show_context=bool(payload.get("show_context")))
+            self._handle_answer(
+                query=query,
+                top_k=top_k,
+                raw_query=raw_query,
+                show_context=bool(payload.get("show_context")),
+                stream=bool(payload.get("stream")),
+            )
             return
         self._write_json(HTTPStatus.NOT_FOUND, {"error": f"unknown route: {path}"})
 
@@ -144,7 +150,7 @@ class RequestHandler(BaseHTTPRequestHandler):
             },
         )
 
-    def _handle_answer(self, *, query: str, top_k: int, raw_query: bool, show_context: bool) -> None:
+    def _handle_answer(self, *, query: str, top_k: int, raw_query: bool, show_context: bool, stream: bool) -> None:
         if not self.server.ollama_provider:
             self._write_json(
                 HTTPStatus.BAD_REQUEST,
@@ -155,6 +161,10 @@ class RequestHandler(BaseHTTPRequestHandler):
                     )
                 },
             )
+            return
+
+        if stream:
+            self._handle_answer_stream(query=query, top_k=top_k, raw_query=raw_query, show_context=show_context)
             return
 
         started = time.time()
@@ -180,6 +190,57 @@ class RequestHandler(BaseHTTPRequestHandler):
         if show_context:
             payload["context"] = context
         self._write_json(HTTPStatus.OK, payload)
+
+    def _handle_answer_stream(self, *, query: str, top_k: int, raw_query: bool, show_context: bool) -> None:
+        started = time.time()
+        try:
+            prompt, context, results = self.server.retriever.build_prompt_bundle(
+                query,
+                top_k=top_k,
+                raw_query=raw_query,
+            )
+        except RuntimeError as exc:
+            self._write_json(HTTPStatus.BAD_GATEWAY, {"error": str(exc)})
+            return
+
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+
+        try:
+            titles = ", ".join(
+                self.server.retriever.rows[chunk.chunk_id].get("title", "")
+                for _, chunk in results
+            )
+            prelude = (
+                f"Generating answer from {len(results)} retrieved record(s)...\n"
+                f"Retrieved: {titles}\n\n"
+            )
+            self.wfile.write(prelude.encode("utf-8"))
+            self.wfile.flush()
+            for piece in stream_llm(prompt):
+                self.wfile.write(piece.encode("utf-8"))
+                self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError):
+            return
+        except RuntimeError as exc:
+            try:
+                self.wfile.write(f"\n\n[stream error] {exc}\n".encode("utf-8"))
+                self.wfile.flush()
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            return
+
+        trailer = [f"\n\nLatency: {round((time.time() - started) * 1000, 2)} ms"]
+        if show_context:
+            trailer.append(f"Retrieved Context\n{context}")
+
+        try:
+            self.wfile.write(("\n\n" + "\n\n".join(trailer) + "\n").encode("utf-8"))
+            self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError):
+            return
 
     def _read_json(self) -> dict:
         raw_length = self.headers.get("Content-Length", "").strip()

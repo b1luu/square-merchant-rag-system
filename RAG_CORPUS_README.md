@@ -77,13 +77,24 @@ curl -s -X POST http://127.0.0.1:8000/answer \
   -d '{"query":"what happens if i am sick?","top_k":3,"show_context":true}'
 ```
 
+Stream the answer to the terminal as tokens arrive instead of waiting for the full JSON response:
+
+```bash
+curl -N -s -X POST http://127.0.0.1:8000/answer \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"what happens if i am sick?","top_k":3,"stream":true,"show_context":true}'
+```
+
+When `stream=true`, `/answer` returns plain text instead of JSON so `curl` can print tokens immediately.
+The streamed response starts with a short retrieval status prelude, then the model answer, then a latency line.
+
 Routes:
 
 | Route | Method | Purpose |
 |-------|--------|---------|
 | `/health` | `GET` | Server status, corpus size, model info |
 | `/retrieve` | `POST` | Retrieval only; returns ranked records and server-measured latency |
-| `/answer` | `POST` | Retrieval + prompt build + `call_llm(prompt)` |
+| `/answer` | `POST` | Retrieval + prompt build + `call_llm(prompt)`; add `"stream": true` for plain-text streamed tokens |
 
 ## Retrieval evaluation
 
