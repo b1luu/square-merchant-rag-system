@@ -11,6 +11,8 @@ from mosa_rag.faiss_cache import default_cache_root, load_or_build_faiss_index
 from mosa_rag.retrieve_jsonl import build_chunks, load_rows
 from retrieve_pdf import MODEL_NAME, Chunk, retrieve
 
+ANSWER_TOP_K_DEFAULT = 2
+
 INSTRUCTIONS = (
     "You are answering internal Mosa Tea staff questions. "
     "Only use the provided retrieved records—treat them as the only source of truth. "
@@ -19,30 +21,46 @@ INSTRUCTIONS = (
 )
 
 
-def format_record(record: dict, score: float) -> str:
+def _append_field(lines: list[str], field: str, value: object) -> None:
+    if not value:
+        return
+    if isinstance(value, list):
+        joined = "; ".join(str(item) for item in value)
+        if joined:
+            lines.append(f"{field}: {joined}")
+        return
+    text = str(value).strip()
+    if text:
+        lines.append(f"{field}: {text}")
+
+
+def format_record(record: dict, score: float, *, compact: bool) -> str:
     lines = [
-        f"id: {record.get('id', '')}",
         f"title: {record.get('title', '')}",
         f"type: {record.get('type', '')}",
         f"source: {record.get('source_file', '')} page {record.get('source_page', '')}",
         f"score: {score:.4f}",
     ]
-    for field in ("retrieval_text", "rules", "steps", "ingredients", "storage_life", "threshold", "action"):
-        value = record.get(field)
-        if not value:
-            continue
-        if isinstance(value, list):
-            lines.append(f"{field}: {'; '.join(str(item) for item in value)}")
-        else:
-            lines.append(f"{field}: {value}")
+
+    structured_fields = ("rules", "steps", "ingredients", "storage_life", "threshold", "action")
+    has_structured_payload = any(record.get(field) for field in structured_fields)
+    if compact:
+        for field in structured_fields:
+            _append_field(lines, field, record.get(field))
+        if not has_structured_payload:
+            _append_field(lines, "retrieval_text", record.get("retrieval_text"))
+    else:
+        _append_field(lines, "id", record.get("id"))
+        for field in ("retrieval_text", *structured_fields):
+            _append_field(lines, field, record.get(field))
     return "\n".join(lines)
 
 
-def build_context(rows: list[dict], results: list[tuple[float, Chunk]]) -> str:
+def build_context(rows: list[dict], results: list[tuple[float, Chunk]], *, compact: bool) -> str:
     blocks: list[str] = []
     for rank, (score, chunk) in enumerate(results, start=1):
         record = rows[chunk.chunk_id]
-        blocks.append(f"[record {rank}]\n{format_record(record, score)}")
+        blocks.append(f"[record {rank}]\n{format_record(record, score, compact=compact)}")
     return "\n\n".join(blocks)
 
 
@@ -115,7 +133,13 @@ class ResidentRetriever:
         )
         self._retrieve_lock = threading.Lock()
 
-    def retrieve(self, query: str, *, top_k: int = 5, raw_query: bool = False) -> list[tuple[float, Chunk]]:
+    def retrieve(
+        self,
+        query: str,
+        *,
+        top_k: int = ANSWER_TOP_K_DEFAULT,
+        raw_query: bool = False,
+    ) -> list[tuple[float, Chunk]]:
         with self._retrieve_lock:
             return retrieve(
                 encoder=self.encoder,
@@ -130,12 +154,13 @@ class ResidentRetriever:
         self,
         query: str,
         *,
-        top_k: int = 5,
+        top_k: int = ANSWER_TOP_K_DEFAULT,
         raw_query: bool = False,
-    ) -> tuple[str, str, list[tuple[float, Chunk]]]:
+    ) -> tuple[str, str, str, list[tuple[float, Chunk]]]:
         results = self.retrieve(query, top_k=top_k, raw_query=raw_query)
-        context = build_context(self.rows, results)
-        return build_prompt(query, context), context, results
+        prompt_context = build_context(self.rows, results, compact=True)
+        display_context = build_context(self.rows, results, compact=False)
+        return build_prompt(query, prompt_context), prompt_context, display_context, results
 
     def serialize_results(self, results: list[tuple[float, Chunk]]) -> list[RetrievedRecord]:
         payload: list[RetrievedRecord] = []

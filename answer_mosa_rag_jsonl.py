@@ -11,7 +11,7 @@ import textwrap
 from pathlib import Path
 
 from mosa_rag.llm import DEFAULT_OLLAMA_MODEL, OLLAMA_LOCAL, OLLAMA_REMOTE, call_llm, resolve_ollama_generate_url
-from mosa_rag.runtime import ResidentRetriever
+from mosa_rag.runtime import ANSWER_TOP_K_DEFAULT, ResidentRetriever
 from retrieve_pdf import MODEL_NAME
 
 
@@ -32,7 +32,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("query")
     parser.add_argument("--jsonl", type=Path, default=Path("normalized_mosa_rag.jsonl"))
     parser.add_argument("--model-name", default=MODEL_NAME, help=f"Embedding model (default: {MODEL_NAME})")
-    parser.add_argument("--top-k", type=int, default=5, help="How many retrieved records to send to the LLM")
+    parser.add_argument(
+        "--top-k",
+        type=int,
+        default=ANSWER_TOP_K_DEFAULT,
+        help=f"How many retrieved records to send to the LLM (default: {ANSWER_TOP_K_DEFAULT})",
+    )
     parser.add_argument("--raw-query", action="store_true", help="Omit BGE query instruction prefix")
     parser.add_argument(
         "--ollama-provider",
@@ -74,7 +79,7 @@ def main() -> None:
     except RuntimeError as exc:
         sys.exit(f"error: {exc}")
 
-    prompt, context, _ = retriever.build_prompt_bundle(
+    prompt, prompt_context, _, _ = retriever.build_prompt_bundle(
         args.query,
         top_k=args.top_k,
         raw_query=args.raw_query,
@@ -87,6 +92,7 @@ def main() -> None:
             "ollama_provider": args.ollama_provider.strip() or None,
             "ollama_model": args.ollama_model,
             "prompt": prompt,
+            "prompt_context": prompt_context,
         }
         try:
             out["generate_url"] = resolve_ollama_generate_url()
@@ -121,7 +127,7 @@ def main() -> None:
     if args.show_context:
         print("\nRetrieved Context")
         print("-" * 80)
-        print(context)
+        print(prompt_context)
 
 
 if __name__ == "__main__":

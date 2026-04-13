@@ -33,7 +33,7 @@ For repeated low-latency queries, run the warm local API instead of starting a f
 python serve_mosa_rag.py --host 127.0.0.1 --port 8000
 curl -s -X POST http://127.0.0.1:8000/retrieve \
   -H 'Content-Type: application/json' \
-  -d '{"query":"what happens if i am sick?","top_k":3}'
+  -d '{"query":"what happens if i am sick?","top_k":2}'
 ```
 
 If Ollama is enabled on the server, stream generated answers directly to the terminal:
@@ -41,7 +41,7 @@ If Ollama is enabled on the server, stream generated answers directly to the ter
 ```bash
 curl -N -s -X POST http://127.0.0.1:8000/answer \
   -H 'Content-Type: application/json' \
-  -d '{"query":"what happens if i am sick?","top_k":3,"stream":true}'
+  -d '{"query":"what happens if i am sick?","top_k":2,"stream":true}'
 ```
 
 ---

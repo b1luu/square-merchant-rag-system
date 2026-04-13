@@ -15,7 +15,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from mosa_rag.llm import DEFAULT_OLLAMA_MODEL, OLLAMA_LOCAL, OLLAMA_REMOTE, call_llm, stream_llm
-from mosa_rag.runtime import ResidentRetriever
+from mosa_rag.runtime import ANSWER_TOP_K_DEFAULT, ResidentRetriever
 from retrieve_pdf import MODEL_NAME
 
 
@@ -38,7 +38,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--port", type=int, default=8000, help="Bind port (default: 8000)")
     parser.add_argument("--jsonl", type=Path, default=Path("normalized_mosa_rag.jsonl"))
     parser.add_argument("--model-name", default=MODEL_NAME, help=f"Embedding model (default: {MODEL_NAME})")
-    parser.add_argument("--top-k-default", type=int, default=5, help="Default top-k for requests (default: 5)")
+    parser.add_argument(
+        "--top-k-default",
+        type=int,
+        default=ANSWER_TOP_K_DEFAULT,
+        help=f"Default top-k for answer/retrieve requests (default: {ANSWER_TOP_K_DEFAULT})",
+    )
     parser.add_argument("--raw-query-default", action="store_true", help="Disable BGE query prefix by default")
     parser.add_argument(
         "--ollama-provider",
@@ -169,7 +174,7 @@ class RequestHandler(BaseHTTPRequestHandler):
 
         started = time.time()
         try:
-            prompt, context, results = self.server.retriever.build_prompt_bundle(
+            prompt, prompt_context, display_context, results = self.server.retriever.build_prompt_bundle(
                 query,
                 top_k=top_k,
                 raw_query=raw_query,
@@ -188,13 +193,14 @@ class RequestHandler(BaseHTTPRequestHandler):
             "results": [asdict(hit) for hit in self.server.retriever.serialize_results(results)],
         }
         if show_context:
-            payload["context"] = context
+            payload["context"] = prompt_context
+            payload["display_context"] = display_context
         self._write_json(HTTPStatus.OK, payload)
 
     def _handle_answer_stream(self, *, query: str, top_k: int, raw_query: bool, show_context: bool) -> None:
         started = time.time()
         try:
-            prompt, context, results = self.server.retriever.build_prompt_bundle(
+            prompt, prompt_context, display_context, results = self.server.retriever.build_prompt_bundle(
                 query,
                 top_k=top_k,
                 raw_query=raw_query,
@@ -234,7 +240,8 @@ class RequestHandler(BaseHTTPRequestHandler):
 
         trailer = [f"\n\nLatency: {round((time.time() - started) * 1000, 2)} ms"]
         if show_context:
-            trailer.append(f"Retrieved Context\n{context}")
+            trailer.append(f"Prompt Context\n{prompt_context}")
+            trailer.append(f"Display Context\n{display_context}")
 
         try:
             self.wfile.write(("\n\n" + "\n\n".join(trailer) + "\n").encode("utf-8"))

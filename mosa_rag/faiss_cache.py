@@ -9,7 +9,6 @@ from pathlib import Path
 
 import faiss
 import numpy as np
-
 from retrieve_pdf import BGEOnnxEncoder, Chunk, build_faiss_index
 
 CACHE_SCHEMA_VERSION = 1
@@ -26,20 +25,12 @@ def _bucket_name(source_jsonl: Path, model_name: str) -> str:
     return hashlib.sha256(key.encode()).hexdigest()[:24]
 
 
-def _embeddings_from_index(index: faiss.IndexFlatIP) -> np.ndarray:
-    n = int(index.ntotal)
-    if n == 0:
-        return np.zeros((0, int(index.d)), dtype=np.float32)
-    rows = [index.reconstruct(i) for i in range(n)]
-    return np.vstack(rows).astype(np.float32)
-
-
 def _try_load_cache(
     cache_dir: Path,
     source_jsonl: Path,
     model_name: str,
     num_chunks: int,
-) -> tuple[BGEOnnxEncoder, faiss.IndexFlatIP, np.ndarray] | None:
+) -> tuple[BGEOnnxEncoder, faiss.IndexFlatIP, None] | None:
     meta_path = cache_dir / META_NAME
     index_path = cache_dir / INDEX_NAME
     if not meta_path.is_file() or not index_path.is_file():
@@ -76,12 +67,7 @@ def _try_load_cache(
         return None
 
     encoder = BGEOnnxEncoder(model_name)
-    probe = encoder.encode(["__cache_probe__"])
-    if int(probe.shape[1]) != int(index.d):
-        return None
-
-    embeddings = _embeddings_from_index(index)
-    return encoder, index, embeddings
+    return encoder, index, None
 
 
 def _write_cache(
@@ -115,7 +101,7 @@ def load_or_build_faiss_index(
     *,
     cache_root: Path | None,
     no_cache: bool = False,
-) -> tuple[BGEOnnxEncoder, faiss.IndexFlatIP, np.ndarray]:
+) -> tuple[BGEOnnxEncoder, faiss.IndexFlatIP, np.ndarray | None]:
     """
     Same contract as retrieve_pdf.build_faiss_index, but reuses a saved index when the
     JSONL path, size, mtime, embedding model, and chunk count match cache metadata.

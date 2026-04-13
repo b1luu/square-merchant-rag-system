@@ -63,7 +63,7 @@ Warm retrieval request:
 ```bash
 curl -s -X POST http://127.0.0.1:8000/retrieve \
   -H 'Content-Type: application/json' \
-  -d '{"query":"what happens if i am sick?","top_k":3}'
+  -d '{"query":"what happens if i am sick?","top_k":2}'
 ```
 
 Warm answer request (when Ollama is configured on the server process):
@@ -74,7 +74,7 @@ python serve_mosa_rag.py --host 127.0.0.1 --port 8000 --ollama-provider ollama_l
 
 curl -s -X POST http://127.0.0.1:8000/answer \
   -H 'Content-Type: application/json' \
-  -d '{"query":"what happens if i am sick?","top_k":3,"show_context":true}'
+  -d '{"query":"what happens if i am sick?","top_k":2,"show_context":true}'
 ```
 
 Stream the answer to the terminal as tokens arrive instead of waiting for the full JSON response:
@@ -82,11 +82,12 @@ Stream the answer to the terminal as tokens arrive instead of waiting for the fu
 ```bash
 curl -N -s -X POST http://127.0.0.1:8000/answer \
   -H 'Content-Type: application/json' \
-  -d '{"query":"what happens if i am sick?","top_k":3,"stream":true,"show_context":true}'
+  -d '{"query":"what happens if i am sick?","top_k":2,"stream":true,"show_context":true}'
 ```
 
 When `stream=true`, `/answer` returns plain text instead of JSON so `curl` can print tokens immediately.
 The streamed response starts with a short retrieval status prelude, then the model answer, then a latency line.
+The answer path now defaults to `top_k=2`, and the prompt context drops duplicated `retrieval_text` when structured fields are already present.
 
 Routes:
 
