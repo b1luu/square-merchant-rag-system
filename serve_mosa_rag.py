@@ -125,6 +125,7 @@ class RequestHandler(BaseHTTPRequestHandler):
 
         top_k = int(payload.get("top_k") or self.server.top_k_default)
         raw_query = bool(payload.get("raw_query", self.server.raw_query_default))
+        allow_low_confidence = bool(payload.get("allow_low_confidence"))
 
         if path == "/retrieve":
             self._handle_retrieve(query=query, top_k=top_k, raw_query=raw_query)
@@ -136,13 +137,18 @@ class RequestHandler(BaseHTTPRequestHandler):
                 raw_query=raw_query,
                 show_context=bool(payload.get("show_context")),
                 stream=bool(payload.get("stream")),
+                allow_low_confidence=allow_low_confidence,
             )
             return
         self._write_json(HTTPStatus.NOT_FOUND, {"error": f"unknown route: {path}"})
 
     def _handle_retrieve(self, *, query: str, top_k: int, raw_query: bool) -> None:
         started = time.time()
-        results = self.server.retriever.retrieve(query, top_k=top_k, raw_query=raw_query)
+        results, confidence = self.server.retriever.retrieve_with_confidence(
+            query,
+            top_k=top_k,
+            raw_query=raw_query,
+        )
         hits = [asdict(hit) for hit in self.server.retriever.serialize_results(results)]
         self._write_json(
             HTTPStatus.OK,
@@ -151,11 +157,59 @@ class RequestHandler(BaseHTTPRequestHandler):
                 "top_k": top_k,
                 "raw_query": raw_query,
                 "latency_ms": round((time.time() - started) * 1000, 2),
+                "retrieval_confidence": asdict(confidence),
                 "results": hits,
             },
         )
 
-    def _handle_answer(self, *, query: str, top_k: int, raw_query: bool, show_context: bool, stream: bool) -> None:
+    def _handle_answer(
+        self,
+        *,
+        query: str,
+        top_k: int,
+        raw_query: bool,
+        show_context: bool,
+        stream: bool,
+        allow_low_confidence: bool,
+    ) -> None:
+        if stream:
+            self._handle_answer_stream(
+                query=query,
+                top_k=top_k,
+                raw_query=raw_query,
+                show_context=show_context,
+                allow_low_confidence=allow_low_confidence,
+            )
+            return
+
+        started = time.time()
+        try:
+            prompt, prompt_context, display_context, results, confidence = self.server.retriever.build_prompt_bundle(
+                query,
+                top_k=top_k,
+                raw_query=raw_query,
+            )
+        except RuntimeError as exc:
+            self._write_json(HTTPStatus.BAD_GATEWAY, {"error": str(exc)})
+            return
+
+        if confidence.should_abstain and not allow_low_confidence:
+            payload = {
+                "query": query,
+                "top_k": top_k,
+                "raw_query": raw_query,
+                "latency_ms": round((time.time() - started) * 1000, 2),
+                "abstained": True,
+                "answer": "The retrieved records do not clearly answer this question.",
+                "retrieval_confidence": asdict(confidence),
+                "results": [asdict(hit) for hit in self.server.retriever.serialize_results(results)],
+            }
+            if show_context:
+                payload["context"] = prompt_context
+                payload["display_context"] = display_context
+            self._write_json(HTTPStatus.OK, payload)
+            return
+
         if not self.server.ollama_provider:
             self._write_json(
                 HTTPStatus.BAD_REQUEST,
@@ -168,17 +222,7 @@ class RequestHandler(BaseHTTPRequestHandler):
             )
             return
 
-        if stream:
-            self._handle_answer_stream(query=query, top_k=top_k, raw_query=raw_query, show_context=show_context)
-            return
-
-        started = time.time()
         try:
-            prompt, prompt_context, display_context, results = self.server.retriever.build_prompt_bundle(
-                query,
-                top_k=top_k,
-                raw_query=raw_query,
-            )
             answer = call_llm(prompt)
         except RuntimeError as exc:
             self._write_json(HTTPStatus.BAD_GATEWAY, {"error": str(exc)})
@@ -189,7 +233,9 @@ class RequestHandler(BaseHTTPRequestHandler):
             "top_k": top_k,
             "raw_query": raw_query,
             "latency_ms": round((time.time() - started) * 1000, 2),
+            "abstained": False,
             "answer": answer,
+            "retrieval_confidence": asdict(confidence),
             "results": [asdict(hit) for hit in self.server.retriever.serialize_results(results)],
         }
         if show_context:
@@ -197,16 +243,36 @@ class RequestHandler(BaseHTTPRequestHandler):
             payload["display_context"] = display_context
         self._write_json(HTTPStatus.OK, payload)
 
-    def _handle_answer_stream(self, *, query: str, top_k: int, raw_query: bool, show_context: bool) -> None:
+    def _handle_answer_stream(
+        self,
+        *,
+        query: str,
+        top_k: int,
+        raw_query: bool,
+        show_context: bool,
+        allow_low_confidence: bool,
+    ) -> None:
         started = time.time()
         try:
-            prompt, prompt_context, display_context, results = self.server.retriever.build_prompt_bundle(
+            prompt, prompt_context, display_context, results, confidence = self.server.retriever.build_prompt_bundle(
                 query,
                 top_k=top_k,
                 raw_query=raw_query,
             )
         except RuntimeError as exc:
             self._write_json(HTTPStatus.BAD_GATEWAY, {"error": str(exc)})
+            return
+
+        if not self.server.ollama_provider and not (confidence.should_abstain and not allow_low_confidence):
+            self._write_json(
+                HTTPStatus.BAD_REQUEST,
+                {
+                    "error": (
+                        f"server has no Ollama provider configured; start it with --ollama-provider "
+                        f"{OLLAMA_LOCAL} or {OLLAMA_REMOTE}"
+                    )
+                },
+            )
             return
 
         self.send_response(HTTPStatus.OK)
@@ -219,11 +285,27 @@ class RequestHandler(BaseHTTPRequestHandler):
                 self.server.retriever.rows[chunk.chunk_id].get("title", "")
                 for _, chunk in results
             )
-            prelude = (
-                f"Generating answer from {len(results)} retrieved record(s)...\n"
-                f"Retrieved: {titles}\n\n"
-            )
-            self.wfile.write(prelude.encode("utf-8"))
+            prelude_lines = [
+                f"Retrieved {len(results)} record(s).",
+                f"Confidence: level={confidence.level} score={confidence.score:.4f}",
+                f"Retrieved: {titles}",
+                "",
+            ]
+            self.wfile.write(("\n".join(prelude_lines)).encode("utf-8"))
+            self.wfile.flush()
+            if confidence.should_abstain and not allow_low_confidence:
+                reason_text = ""
+                if confidence.reasons:
+                    reason_text = f"Reason: {'; '.join(confidence.reasons)}\n"
+                self.wfile.write(
+                    (
+                        "The retrieved records do not clearly answer this question.\n"
+                        f"{reason_text}"
+                    ).encode("utf-8")
+                )
+                self.wfile.flush()
+                return
+            self.wfile.write(f"Generating answer from {len(results)} retrieved record(s)...\n\n".encode("utf-8"))
             self.wfile.flush()
             for piece in stream_llm(prompt):
                 self.wfile.write(piece.encode("utf-8"))

@@ -8,6 +8,7 @@ import json
 import os
 import sys
 import textwrap
+from dataclasses import asdict
 from pathlib import Path
 
 from mosa_rag.llm import DEFAULT_OLLAMA_MODEL, OLLAMA_LOCAL, OLLAMA_REMOTE, call_llm, resolve_ollama_generate_url
@@ -25,6 +26,21 @@ def _validate_ollama_provider(name: str) -> None:
         sys.exit(
             f"error: OLLAMA_PROVIDER / --ollama-provider must be {OLLAMA_LOCAL!r} or {OLLAMA_REMOTE!r}, got {name!r}"
         )
+
+
+def _print_confidence(confidence: object) -> None:
+    payload = asdict(confidence)
+    print("Retrieval Confidence")
+    print("-" * 80)
+    print(
+        "level={level} score={score:.4f} top_score={top_score:.4f} "
+        "margin={score_margin:.4f} anchor_ratio={anchor_ratio:.4f} supporting_hits={supporting_hits}".format(
+            **payload
+        )
+    )
+    reasons = payload.get("reasons") or []
+    if reasons:
+        print(f"reasons: {'; '.join(reasons)}")
 
 
 def parse_args() -> argparse.Namespace:
@@ -54,6 +70,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--show-context", action="store_true", help="Print retrieved records after the answer")
     parser.add_argument("--dry-run", action="store_true", help="Do not call the API; print the prompt payload")
     parser.add_argument(
+        "--allow-low-confidence",
+        action="store_true",
+        help="Generate an answer even when retrieval confidence says the results are too weak to trust",
+    )
+    parser.add_argument(
         "--cache-dir",
         type=Path,
         default=None,
@@ -79,7 +100,7 @@ def main() -> None:
     except RuntimeError as exc:
         sys.exit(f"error: {exc}")
 
-    prompt, prompt_context, _, _ = retriever.build_prompt_bundle(
+    prompt, prompt_context, _, _, confidence = retriever.build_prompt_bundle(
         args.query,
         top_k=args.top_k,
         raw_query=args.raw_query,
@@ -93,12 +114,22 @@ def main() -> None:
             "ollama_model": args.ollama_model,
             "prompt": prompt,
             "prompt_context": prompt_context,
+            "retrieval_confidence": asdict(confidence),
         }
         try:
             out["generate_url"] = resolve_ollama_generate_url()
         except RuntimeError as exc:
             out["generate_url_error"] = str(exc)
         print(json.dumps(out, indent=2))
+        return
+
+    _print_confidence(confidence)
+    print()
+
+    if confidence.should_abstain and not args.allow_low_confidence:
+        print("Answer")
+        print("-" * 80)
+        print("The retrieved records do not clearly answer this question.")
         return
 
     if not args.ollama_provider.strip():
