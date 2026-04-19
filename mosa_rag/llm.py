@@ -77,7 +77,7 @@ def call_llm(prompt: str) -> str:
     """
     req = _build_ollama_request(prompt, stream=False)
     try:
-        with request.urlopen(req, timeout=120) as resp:
+        with request.urlopen(req, timeout=300) as resp:
             body = json.loads(resp.read().decode("utf-8"))
     except error.HTTPError as exc:
         err_body = exc.read().decode("utf-8", errors="replace")

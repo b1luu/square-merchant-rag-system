@@ -4,3 +4,5 @@ numpy>=1.26.0,<2
 onnxruntime>=1.18.0
 pypdf>=4.2.0
 transformers>=4.41.0,<5
+fastapi>=0.110.0
+uvicorn>=0.29.0
