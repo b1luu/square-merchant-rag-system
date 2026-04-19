@@ -4,3 +4,5 @@ __pycache__/
 data
 .venv311/
 .rag_index_cache/
+
+.claude/worktrees/

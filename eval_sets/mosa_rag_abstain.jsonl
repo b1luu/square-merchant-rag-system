@@ -1,0 +1,4 @@
+{"id":"abstain_001","category":"unsupported_hardware","query":"how do i re-pair the card reader?","expected_outcome":"abstain","notes":"Square hardware troubleshooting is only covered at a generic support-phone level today."}
+{"id":"abstain_002","category":"unsupported_network","query":"how do i reconnect the bluetooth scanner?","expected_outcome":"abstain","notes":"The corpus covers Wi-Fi password location, not Bluetooth peripheral pairing."}
+{"id":"abstain_003","category":"unsupported_network","query":"how do i change the ipad wifi settings?","expected_outcome":"abstain","notes":"Finding the Wi-Fi password should not be treated as device-network setup instructions."}
+{"id":"abstain_004","category":"unsupported_network","query":"how do i reset the router?","expected_outcome":"abstain","notes":"Network infrastructure operations are not documented in the current corpus."}

@@ -116,12 +116,13 @@ Build path (PDFs → JSONL) lives under `mosa_rag/` (`build_corpus`, extractors,
 | Dimension | Value |
 |-----------|--------|
 | **Corpus scale** | **137** operational records in `normalized_mosa_rag.jsonl` (drink builds, prep rules, POS, policies, etc.). |
-| **Retrieval quality (JSONL)** | **39 / 39** scored eval queries passed **Hit@1** and **Hit@5** with **MRR 1.000** across `eval_sets/mosa_rag_smoke.jsonl` (19 cases) and `mosa_rag_paraphrase.jsonl` (20 cases), `top_k=5`, BGE instruction on. |
+| **Retrieval quality (JSONL)** | **39 / 39** support cases passed **Hit@1** and **Hit@5** with **MRR 1.000** across `eval_sets/mosa_rag_smoke.jsonl` (19 cases) and `mosa_rag_paraphrase.jsonl` (20 cases), `top_k=5`, BGE instruction on. |
+| **Abstention quality (JSONL)** | Dedicated unsupported-query evals in `eval_sets/mosa_rag_abstain.jsonl` verify that low-confidence retrievals abstain instead of forcing grounded-sounding answers. |
 | **Retrieval quality (PDF probe)** | **8 / 8** questions on a bundled sample handbook PDF: **Hit@1** and **Hit@3** at **MRR 1.000** with chunk size **80**, overlap **30** (`evaluate_retrieval.py`). |
 | **End-to-end latency (cold index)** | **~52 s** full PDF eval run (embed index + 8 queries); **~61 s** JSONL eval run (embed **137** records + two eval files). First run includes model artifact load from Hugging Face. |
 | **Operational impact** | Designed to shrink **multi-minute** PDF or chat “guesswork” into a **sub-minute** loop: one query, ranked evidence, optional grounded generation. |
 
-Reproduce the JSONL numbers:
+Reproduce the JSONL support + abstention evals:
 
 ```bash
 python evaluate_mosa_rag_jsonl.py --jsonl normalized_mosa_rag.jsonl --top-k 5

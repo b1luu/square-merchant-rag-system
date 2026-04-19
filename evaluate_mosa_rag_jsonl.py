@@ -9,12 +9,14 @@ from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 
+from mosa_rag.runtime import assess_retrieval_confidence
 from retrieve_pdf import MODEL_NAME, Chunk, build_faiss_index, retrieve
 
 DEFAULT_JSONL = Path("normalized_mosa_rag.jsonl")
 DEFAULT_CASE_FILES = (
     Path("eval_sets/mosa_rag_smoke.jsonl"),
     Path("eval_sets/mosa_rag_paraphrase.jsonl"),
+    Path("eval_sets/mosa_rag_abstain.jsonl"),
 )
 
 
@@ -25,6 +27,7 @@ class EvalCase:
     category: str
     expected_ids: tuple[str, ...]
     expected_titles: tuple[str, ...]
+    expected_outcome: str
     notes: str = ""
 
 
@@ -81,8 +84,18 @@ def load_cases(case_path: Path) -> list[EvalCase]:
             expected_titles = (expected_titles_raw,)
         else:
             expected_titles = tuple(str(item) for item in expected_titles_raw)
+        expected_outcome = str(record.get("expected_outcome") or "support").strip().lower()
         if not query:
             raise ValueError(f"{case_path}:{line_number} is missing query")
+        if expected_outcome not in {"support", "abstain"}:
+            raise ValueError(
+                f"{case_path}:{line_number} has invalid expected_outcome {expected_outcome!r}; "
+                "expected 'support' or 'abstain'"
+            )
+        if expected_outcome == "support" and not (expected_ids or expected_titles):
+            raise ValueError(
+                f"{case_path}:{line_number} support case must include expected_ids or expected_titles"
+            )
         cases.append(
             EvalCase(
                 case_id=case_id,
@@ -90,6 +103,7 @@ def load_cases(case_path: Path) -> list[EvalCase]:
                 category=category,
                 expected_ids=expected_ids,
                 expected_titles=expected_titles,
+                expected_outcome=expected_outcome,
                 notes=str(record.get("notes") or "").strip(),
             )
         )
@@ -107,6 +121,20 @@ def summarize_result_rows(rows: list[dict], results: list[tuple[float, Chunk]], 
     return summary
 
 
+def _support_match_rank(case: EvalCase, rows: list[dict], results: list[tuple[float, Chunk]]) -> int | None:
+    if case.expected_ids:
+        for rank, (_, chunk) in enumerate(results, start=1):
+            record = rows[chunk.chunk_id]
+            if record["id"] in case.expected_ids or record["title"] in case.expected_titles:
+                return rank
+        return None
+
+    for rank, (_, chunk) in enumerate(results, start=1):
+        if rows[chunk.chunk_id]["title"] in case.expected_titles:
+            return rank
+    return None
+
+
 def evaluate_case_file(
     *,
     case_path: Path,
@@ -121,8 +149,8 @@ def evaluate_case_file(
     print(f"\n=== {case_path} ===")
     print(f"Cases loaded: {len(cases)}")
 
-    scored_cases: list[tuple[EvalCase, int | None, list[tuple[float, Chunk]]]] = []
-    probe_cases: list[tuple[EvalCase, list[tuple[float, Chunk]]]] = []
+    support_cases: list[tuple[EvalCase, int | None, bool, list[tuple[float, Chunk]], object]] = []
+    abstain_cases: list[tuple[EvalCase, bool, list[tuple[float, Chunk]], object]] = []
 
     for case in cases:
         results = retrieve(
@@ -133,58 +161,75 @@ def evaluate_case_file(
             top_k=min(top_k, len(chunks)),
             use_instruction=use_instruction,
         )
-        if case.expected_ids:
-            match_rank = None
-            for rank, (_, chunk) in enumerate(results, start=1):
-                record = rows[chunk.chunk_id]
-                if record["id"] in case.expected_ids or record["title"] in case.expected_titles:
-                    match_rank = rank
-                    break
-            scored_cases.append((case, match_rank, results))
-        elif case.expected_titles:
-            match_rank = None
-            for rank, (_, chunk) in enumerate(results, start=1):
-                if rows[chunk.chunk_id]["title"] in case.expected_titles:
-                    match_rank = rank
-                    break
-            scored_cases.append((case, match_rank, results))
+        confidence = assess_retrieval_confidence(case.query, rows, results)
+
+        if case.expected_outcome == "support":
+            match_rank = _support_match_rank(case, rows, results)
+            support_cases.append((case, match_rank, confidence.should_abstain, results, confidence))
         else:
-            probe_cases.append((case, results))
+            abstain_cases.append((case, confidence.should_abstain, results, confidence))
 
-    if scored_cases:
-        hit_at_1 = sum(1 for _, rank, _ in scored_cases if rank == 1)
-        hit_at_k = sum(1 for _, rank, _ in scored_cases if rank is not None)
-        mrr = sum(0.0 if rank is None else 1.0 / rank for _, rank, _ in scored_cases) / len(scored_cases)
+    if support_cases:
+        hit_at_1 = sum(1 for _, rank, _, _, _ in support_cases if rank == 1)
+        hit_at_k = sum(1 for _, rank, _, _, _ in support_cases if rank is not None)
+        mrr = sum(0.0 if rank is None else 1.0 / rank for _, rank, _, _, _ in support_cases) / len(support_cases)
+        support_decision_ok = sum(1 for _, _, should_abstain, _, _ in support_cases if not should_abstain)
+        end_to_end_ok = sum(
+            1 for _, rank, should_abstain, _, _ in support_cases if rank is not None and not should_abstain
+        )
 
-        print(f"Scored cases: {len(scored_cases)}")
-        print(f"Hit@1: {hit_at_1}/{len(scored_cases)}")
-        print(f"Hit@{top_k}: {hit_at_k}/{len(scored_cases)}")
+        print(f"Support cases: {len(support_cases)}")
+        print(f"Decision OK (did not abstain): {support_decision_ok}/{len(support_cases)}")
+        print(f"End-to-end pass: {end_to_end_ok}/{len(support_cases)}")
+        print(f"Hit@1: {hit_at_1}/{len(support_cases)}")
+        print(f"Hit@{top_k}: {hit_at_k}/{len(support_cases)}")
         print(f"MRR: {mrr:.3f}")
 
-        category_rows: dict[str, list[int | None]] = defaultdict(list)
-        for case, match_rank, _ in scored_cases:
-            category_rows[case.category].append(match_rank)
+        category_rows: dict[str, list[tuple[int | None, bool]]] = defaultdict(list)
+        for case, match_rank, should_abstain, _, _ in support_cases:
+            category_rows[case.category].append((match_rank, should_abstain))
 
         print("\nBy category")
-        print("category cases hit@1 hit@k mrr")
+        print("category cases pass hit@1 hit@k mrr")
         for category in sorted(category_rows):
-            ranks = category_rows[category]
-            category_hit_at_1 = sum(1 for rank in ranks if rank == 1)
-            category_hit_at_k = sum(1 for rank in ranks if rank is not None)
-            category_mrr = sum(0.0 if rank is None else 1.0 / rank for rank in ranks) / len(ranks)
+            rows_for_category = category_rows[category]
+            category_hit_at_1 = sum(1 for rank, _ in rows_for_category if rank == 1)
+            category_hit_at_k = sum(1 for rank, _ in rows_for_category if rank is not None)
+            category_pass = sum(1 for rank, should_abstain in rows_for_category if rank is not None and not should_abstain)
+            category_mrr = sum(
+                0.0 if rank is None else 1.0 / rank for rank, _ in rows_for_category
+            ) / len(rows_for_category)
             print(
-                f"{category:<22} {len(ranks):>5} {category_hit_at_1:>5}/{len(ranks):<5} "
-                f"{category_hit_at_k:>5}/{len(ranks):<5} {category_mrr:.3f}"
+                f"{category:<22} {len(rows_for_category):>5} {category_pass:>5}/{len(rows_for_category):<5} "
+                f"{category_hit_at_1:>5}/{len(rows_for_category):<5} "
+                f"{category_hit_at_k:>5}/{len(rows_for_category):<5} {category_mrr:.3f}"
             )
 
-        failures = [(case, rank, results) for case, rank, results in scored_cases if rank is None]
-        soft_misses = [(case, rank, results) for case, rank, results in scored_cases if rank not in (None, 1)]
-        if failures:
+        misses = [
+            (case, rank, results, confidence)
+            for case, rank, _, results, confidence in support_cases
+            if rank is None
+        ]
+        false_abstains = [
+            (case, rank, results, confidence)
+            for case, rank, should_abstain, results, confidence in support_cases
+            if should_abstain
+        ]
+        soft_misses = [
+            (case, rank, results, confidence)
+            for case, rank, should_abstain, results, confidence in support_cases
+            if rank not in (None, 1) and not should_abstain
+        ]
+        if misses:
             print("\nMisses")
-            for case, _, results in failures:
+            for case, _, results, confidence in misses:
                 print(f"- {case.case_id} [{case.category}] {case.query}")
                 expected = ", ".join(case.expected_ids or case.expected_titles)
                 print(f"  expected: {expected}")
+                print(
+                    f"  confidence: level={confidence.level} score={confidence.score:.4f} "
+                    f"should_abstain={confidence.should_abstain}"
+                )
                 if case.notes:
                     print(f"  notes: {case.notes}")
                 for row in summarize_result_rows(rows, results):
@@ -192,10 +237,31 @@ def evaluate_case_file(
         else:
             print("\nMisses\n- none")
 
+        if false_abstains:
+            print("\nFalse abstains")
+            for case, rank, results, confidence in false_abstains:
+                print(f"- {case.case_id} [{case.category}] rank={rank} {case.query}")
+                print(
+                    f"  confidence: level={confidence.level} score={confidence.score:.4f} "
+                    f"should_abstain={confidence.should_abstain}"
+                )
+                if confidence.reasons:
+                    print(f"  reasons: {'; '.join(confidence.reasons)}")
+                if case.notes:
+                    print(f"  notes: {case.notes}")
+                for row in summarize_result_rows(rows, results):
+                    print(f"  got: {row}")
+        else:
+            print("\nFalse abstains\n- none")
+
         if soft_misses:
             print("\nNot rank 1")
-            for case, rank, results in soft_misses:
+            for case, rank, results, confidence in soft_misses:
                 print(f"- {case.case_id} [{case.category}] rank={rank} {case.query}")
+                print(
+                    f"  confidence: level={confidence.level} score={confidence.score:.4f} "
+                    f"should_abstain={confidence.should_abstain}"
+                )
                 if case.notes:
                     print(f"  notes: {case.notes}")
                 for row in summarize_result_rows(rows, results):
@@ -203,14 +269,52 @@ def evaluate_case_file(
         else:
             print("\nNot rank 1\n- none")
 
-    if probe_cases:
-        print("\nManual probes")
-        for case, results in probe_cases:
-            print(f"- {case.case_id} [{case.category}] {case.query}")
-            if case.notes:
-                print(f"  notes: {case.notes}")
-            for row in summarize_result_rows(rows, results):
-                print(f"  top: {row}")
+    if abstain_cases:
+        abstain_pass = sum(1 for _, should_abstain, _, _ in abstain_cases if should_abstain)
+        print(f"\nAbstain cases: {len(abstain_cases)}")
+        print(f"Abstain pass: {abstain_pass}/{len(abstain_cases)}")
+
+        category_rows: dict[str, list[bool]] = defaultdict(list)
+        for case, should_abstain, _, _ in abstain_cases:
+            category_rows[case.category].append(should_abstain)
+
+        print("\nAbstain by category")
+        print("category cases pass")
+        for category in sorted(category_rows):
+            values = category_rows[category]
+            category_pass = sum(1 for value in values if value)
+            print(f"{category:<22} {len(values):>5} {category_pass:>5}/{len(values):<5}")
+
+        failures = [
+            (case, results, confidence)
+            for case, should_abstain, results, confidence in abstain_cases
+            if not should_abstain
+        ]
+        if failures:
+            print("\nFailed abstains")
+            for case, results, confidence in failures:
+                print(f"- {case.case_id} [{case.category}] {case.query}")
+                print(
+                    f"  confidence: level={confidence.level} score={confidence.score:.4f} "
+                    f"should_abstain={confidence.should_abstain}"
+                )
+                if confidence.reasons:
+                    print(f"  reasons: {'; '.join(confidence.reasons)}")
+                if case.notes:
+                    print(f"  notes: {case.notes}")
+                for row in summarize_result_rows(rows, results):
+                    print(f"  got: {row}")
+        else:
+            print("\nFailed abstains\n- none")
+
+    total_cases = len(support_cases) + len(abstain_cases)
+    if total_cases:
+        overall_pass = 0
+        overall_pass += sum(
+            1 for _, rank, should_abstain, _, _ in support_cases if rank is not None and not should_abstain
+        )
+        overall_pass += sum(1 for _, should_abstain, _, _ in abstain_cases if should_abstain)
+        print(f"\nOverall pass: {overall_pass}/{total_cases}")
 
 
 def parse_args() -> argparse.Namespace:
