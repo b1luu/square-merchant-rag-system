@@ -1,0 +1,39 @@
+name: Retrieval Eval
+
+on:
+  workflow_dispatch:
+    inputs:
+      top_k:
+        description: "Top-k retrieval depth for success checks"
+        required: false
+        default: "5"
+
+jobs:
+  retrieval-eval:
+    name: JSONL retrieval and abstention eval
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Cache Hugging Face models
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-bge-base-en-v1.5-${{ runner.os }}
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run retrieval eval
+        run: python evaluate_mosa_rag_jsonl.py --jsonl normalized_mosa_rag.jsonl --top-k "${{ inputs.top_k }}"
