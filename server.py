@@ -15,6 +15,7 @@ from pydantic import BaseModel
 
 from mosa_rag.llm import call_llm
 from mosa_rag.runtime import ANSWER_TOP_K_DEFAULT, ResidentRetriever
+from serve_mosa_rag import MAX_QUERY_CHARS, MAX_TOP_K
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -23,7 +24,20 @@ logger = logging.getLogger(__name__)
 # Config
 # ---------------------------------------------------------------------------
 JSONL_PATH = Path(os.getenv("RAG_JSONL", "normalized_mosa_rag.jsonl"))
-TOP_K = int(os.getenv("RAG_TOP_K", str(ANSWER_TOP_K_DEFAULT)))
+
+
+def _resolve_top_k_env() -> int:
+    raw = os.getenv("RAG_TOP_K", str(ANSWER_TOP_K_DEFAULT))
+    try:
+        top_k = int(raw)
+    except ValueError as exc:
+        raise RuntimeError(f"RAG_TOP_K must be an integer between 1 and {MAX_TOP_K}") from exc
+    if top_k < 1 or top_k > MAX_TOP_K:
+        raise RuntimeError(f"RAG_TOP_K must be an integer between 1 and {MAX_TOP_K}")
+    return top_k
+
+
+TOP_K = _resolve_top_k_env()
 
 # ---------------------------------------------------------------------------
 # Pre-load corpus + FAISS index once at startup via ResidentRetriever
@@ -62,6 +76,8 @@ def chat(req: ChatRequest) -> ChatResponse:
     query = req.message.strip()
     if not query:
         raise HTTPException(status_code=400, detail="message is required")
+    if len(query) > MAX_QUERY_CHARS:
+        raise HTTPException(status_code=400, detail=f"message must be {MAX_QUERY_CHARS} characters or fewer")
 
     logger.info("Query: %s", query)
 

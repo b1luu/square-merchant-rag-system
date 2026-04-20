@@ -8,7 +8,7 @@ import json
 import os
 import sys
 import time
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -17,6 +17,9 @@ from urllib.parse import urlparse
 from mosa_rag.llm import DEFAULT_OLLAMA_MODEL, OLLAMA_LOCAL, OLLAMA_REMOTE, call_llm, stream_llm
 from mosa_rag.runtime import ANSWER_TOP_K_DEFAULT, ResidentRetriever
 from retrieve_pdf import MODEL_NAME
+
+MAX_QUERY_CHARS = 1000
+MAX_TOP_K = 20
 
 
 def _sync_llm_env_from_args(args: argparse.Namespace) -> None:
@@ -30,6 +33,59 @@ def _validate_ollama_provider(name: str) -> None:
         raise RuntimeError(
             f"OLLAMA_PROVIDER / --ollama-provider must be {OLLAMA_LOCAL!r} or {OLLAMA_REMOTE!r}, got {name!r}"
         )
+
+
+@dataclass(frozen=True)
+class RequestOptions:
+    query: str
+    top_k: int
+    raw_query: bool
+    show_context: bool
+    stream: bool
+    allow_low_confidence: bool
+
+
+def _parse_bool_field(payload: dict, field: str, default: bool = False) -> bool:
+    if field not in payload:
+        return default
+    value = payload[field]
+    if isinstance(value, bool):
+        return value
+    raise ValueError(f"{field} must be a boolean")
+
+
+def _parse_top_k(payload: dict, *, default: int) -> int:
+    raw = payload.get("top_k", default)
+    if isinstance(raw, bool) or not isinstance(raw, int):
+        raise ValueError(f"top_k must be an integer between 1 and {MAX_TOP_K}")
+    if raw < 1 or raw > MAX_TOP_K:
+        raise ValueError(f"top_k must be an integer between 1 and {MAX_TOP_K}")
+    return raw
+
+
+def parse_request_options(
+    payload: dict,
+    *,
+    top_k_default: int,
+    raw_query_default: bool,
+) -> RequestOptions:
+    raw_query_text = payload.get("query", "")
+    if not isinstance(raw_query_text, str):
+        raise ValueError("query must be a string")
+    query = raw_query_text.strip()
+    if not query:
+        raise ValueError("request JSON must include non-empty 'query'")
+    if len(query) > MAX_QUERY_CHARS:
+        raise ValueError(f"query must be {MAX_QUERY_CHARS} characters or fewer")
+
+    return RequestOptions(
+        query=query,
+        top_k=_parse_top_k(payload, default=top_k_default),
+        raw_query=_parse_bool_field(payload, "raw_query", raw_query_default),
+        show_context=_parse_bool_field(payload, "show_context"),
+        stream=_parse_bool_field(payload, "stream"),
+        allow_low_confidence=_parse_bool_field(payload, "allow_low_confidence"),
+    )
 
 
 def parse_args() -> argparse.Namespace:
@@ -128,26 +184,27 @@ class RequestHandler(BaseHTTPRequestHandler):
             self._write_json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
             return
 
-        query = str(payload.get("query", "")).strip()
-        if not query:
-            self._write_json(HTTPStatus.BAD_REQUEST, {"error": "request JSON must include non-empty 'query'"})
+        try:
+            options = parse_request_options(
+                payload,
+                top_k_default=self.server.top_k_default,
+                raw_query_default=self.server.raw_query_default,
+            )
+        except ValueError as exc:
+            self._write_json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
             return
 
-        top_k = int(payload.get("top_k") or self.server.top_k_default)
-        raw_query = bool(payload.get("raw_query", self.server.raw_query_default))
-        allow_low_confidence = bool(payload.get("allow_low_confidence"))
-
         if path == "/retrieve":
-            self._handle_retrieve(query=query, top_k=top_k, raw_query=raw_query)
+            self._handle_retrieve(query=options.query, top_k=options.top_k, raw_query=options.raw_query)
             return
         if path == "/answer":
             self._handle_answer(
-                query=query,
-                top_k=top_k,
-                raw_query=raw_query,
-                show_context=bool(payload.get("show_context")),
-                stream=bool(payload.get("stream")),
-                allow_low_confidence=allow_low_confidence,
+                query=options.query,
+                top_k=options.top_k,
+                raw_query=options.raw_query,
+                show_context=options.show_context,
+                stream=options.stream,
+                allow_low_confidence=options.allow_low_confidence,
             )
             return
         self._write_json(HTTPStatus.NOT_FOUND, {"error": f"unknown route: {path}"})
