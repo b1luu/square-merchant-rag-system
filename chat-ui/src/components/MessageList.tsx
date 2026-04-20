@@ -174,6 +174,11 @@ export default function MessageList({
                         abstained
                       </span>
                     ) : null}
+                    {msg.meta.answerMode === 'extractive' ? (
+                      <span className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-medium text-sky-800">
+                        extractive fallback
+                      </span>
+                    ) : null}
                     {msg.meta.verification ? (
                       <span
                         className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium ${verificationClass(

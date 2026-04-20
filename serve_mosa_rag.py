@@ -210,6 +210,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                 "raw_query": raw_query,
                 "latency_ms": round((time.time() - started) * 1000, 2),
                 "abstained": True,
+                "answer_mode": "abstain",
                 "answer": "The retrieved records do not clearly answer this question.",
                 "verification": asdict(self.server.retriever.verify_answer("", [])),
                 "retrieval_confidence": asdict(confidence),
@@ -222,15 +223,23 @@ class RequestHandler(BaseHTTPRequestHandler):
             return
 
         if not self.server.ollama_provider:
-            self._write_json(
-                HTTPStatus.BAD_REQUEST,
-                {
-                    "error": (
-                        f"server has no Ollama provider configured; start it with --ollama-provider "
-                        f"{OLLAMA_LOCAL} or {OLLAMA_REMOTE}"
-                    )
-                },
-            )
+            answer = self.server.retriever.build_extractive_answer(results)
+            payload = {
+                "query": query,
+                "top_k": top_k,
+                "raw_query": raw_query,
+                "latency_ms": round((time.time() - started) * 1000, 2),
+                "abstained": False,
+                "answer_mode": "extractive",
+                "answer": answer,
+                "verification": asdict(self.server.retriever.verify_answer(answer, results)),
+                "retrieval_confidence": asdict(confidence),
+                "results": [asdict(hit) for hit in self.server.retriever.serialize_results(results)],
+            }
+            if show_context:
+                payload["context"] = prompt_context
+                payload["display_context"] = display_context
+            self._write_json(HTTPStatus.OK, payload)
             return
 
         try:
@@ -245,6 +254,7 @@ class RequestHandler(BaseHTTPRequestHandler):
             "raw_query": raw_query,
             "latency_ms": round((time.time() - started) * 1000, 2),
             "abstained": False,
+            "answer_mode": "llm",
             "answer": answer,
             "verification": asdict(self.server.retriever.verify_answer(answer, results)),
             "retrieval_confidence": asdict(confidence),

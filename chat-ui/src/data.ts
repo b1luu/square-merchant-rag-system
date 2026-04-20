@@ -66,6 +66,7 @@ export function createAssistantMessage(response: AnswerResponse): AssistantMessa
     meta: {
       query: response.query,
       abstained: response.abstained,
+      answerMode: response.answer_mode,
       latencyMs: response.latency_ms,
       confidence: response.retrieval_confidence,
       verification: response.verification,

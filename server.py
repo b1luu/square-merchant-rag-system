@@ -51,6 +51,7 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     response: str
+    answer_mode: str = "llm"
     confidence: dict | None = None
     verification: dict | None = None
     abstained: bool = False
@@ -73,9 +74,19 @@ def chat(req: ChatRequest) -> ChatResponse:
             logger.info("Abstaining — confidence level=%s score=%.4f", confidence.level, confidence.score)
             return ChatResponse(
                 response="The retrieved records don't clearly answer this question.",
+                answer_mode="abstain",
                 confidence=asdict(confidence),
                 verification=asdict(_retriever.verify_answer("", [])),
                 abstained=True,
+            )
+
+        if not os.getenv("OLLAMA_PROVIDER", "").strip():
+            answer = _retriever.build_extractive_answer(_results)
+            return ChatResponse(
+                response=answer,
+                answer_mode="extractive",
+                confidence=asdict(confidence),
+                verification=asdict(_retriever.verify_answer(answer, _results)),
             )
 
         logger.info("Calling Ollama (confidence level=%s score=%.4f) ...", confidence.level, confidence.score)
@@ -87,6 +98,7 @@ def chat(req: ChatRequest) -> ChatResponse:
 
         return ChatResponse(
             response=answer,
+            answer_mode="llm",
             confidence=asdict(confidence),
             verification=asdict(_retriever.verify_answer(answer, _results)),
         )

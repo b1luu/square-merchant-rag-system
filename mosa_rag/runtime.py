@@ -291,6 +291,41 @@ def build_prompt(query: str, context: str) -> str:
     return f"{INSTRUCTIONS}\n\n{build_user_input(query, context)}"
 
 
+def _extractive_record_text(record: dict) -> str:
+    lines: list[str] = []
+    for field in ("rules", "steps", "ingredients", "storage_life", "threshold", "action"):
+        value = record.get(field)
+        if isinstance(value, list):
+            lines.extend(str(item).strip() for item in value if str(item).strip())
+        elif value:
+            lines.append(str(value).strip())
+    if lines:
+        return " ".join(lines)
+    return str(record.get("retrieval_text", "")).strip()
+
+
+def build_extractive_answer(rows: list[dict], results: list[tuple[float, Chunk]], *, max_records: int = 2) -> str:
+    """Return a grounded, no-LLM answer from the top retrieved records."""
+    if not results:
+        return "The retrieved records do not clearly answer this question."
+
+    answer_lines: list[str] = []
+    source_titles: list[str] = []
+    for _, chunk in results[:max_records]:
+        record = rows[chunk.chunk_id]
+        title = str(record.get("title", "")).strip() or "Untitled record"
+        body = _extractive_record_text(record)
+        if not body:
+            continue
+        answer_lines.append(f"{title}: {body}")
+        source_titles.append(title)
+
+    if not answer_lines:
+        return "The retrieved records do not clearly answer this question."
+
+    return "\n\n".join(answer_lines) + f"\n\nSources: {', '.join(source_titles)}"
+
+
 def resolve_cache_root(*, jsonl: Path, cache_dir: Path | None, no_cache: bool) -> Path | None:
     if no_cache:
         return None
@@ -384,6 +419,9 @@ class ResidentRetriever:
         prompt_context = build_context(self.rows, results, compact=True)
         display_context = build_context(self.rows, results, compact=False)
         return build_prompt(query, prompt_context), prompt_context, display_context, results, confidence
+
+    def build_extractive_answer(self, results: list[tuple[float, Chunk]]) -> str:
+        return build_extractive_answer(self.rows, results)
 
     def serialize_results(self, results: list[tuple[float, Chunk]]) -> list[RetrievedRecord]:
         payload: list[RetrievedRecord] = []

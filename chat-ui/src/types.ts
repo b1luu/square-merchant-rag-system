@@ -44,6 +44,7 @@ export interface AnswerResponse {
   latency_ms: number;
   answer: string;
   abstained: boolean;
+  answer_mode?: 'llm' | 'extractive' | 'abstain';
   verification?: AnswerVerification;
   retrieval_confidence: RetrievalConfidence;
   results: RetrievedRecord[];
@@ -52,6 +53,7 @@ export interface AnswerResponse {
 export interface AssistantMeta {
   query: string;
   abstained: boolean;
+  answerMode?: 'llm' | 'extractive' | 'abstain';
   latencyMs: number;
   confidence: RetrievalConfidence;
   verification?: AnswerVerification;
