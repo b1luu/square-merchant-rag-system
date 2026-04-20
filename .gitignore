@@ -10,3 +10,5 @@ node_modules/
 dist/
 chat-ui/node_modules/
 chat-ui/dist/
+logs/
+.rag_trace.jsonl

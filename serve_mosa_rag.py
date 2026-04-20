@@ -16,6 +16,7 @@ from urllib.parse import urlparse
 
 from mosa_rag.llm import DEFAULT_OLLAMA_MODEL, OLLAMA_LOCAL, OLLAMA_REMOTE, call_llm, stream_llm
 from mosa_rag.runtime import ANSWER_TOP_K_DEFAULT, ResidentRetriever
+from mosa_rag.tracing import append_jsonl, build_answer_trace, resolve_trace_path
 from mosa_rag.validation_agent import validate_answer
 from retrieve_pdf import MODEL_NAME
 
@@ -119,6 +120,12 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Directory for FAISS cache (default: BGE_RAG_CACHE_DIR env, else .rag_index_cache next to --jsonl)",
     )
+    parser.add_argument(
+        "--trace-path",
+        type=Path,
+        default=resolve_trace_path(),
+        help="Optional JSONL path for answer request traces (default: RAG_TRACE_PATH env; disabled if unset)",
+    )
     parser.add_argument("--no-cache", action="store_true", help="Always rebuild embeddings and FAISS index")
     return parser.parse_args()
 
@@ -134,6 +141,7 @@ class MosaRagServer(ThreadingHTTPServer):
         raw_query_default: bool,
         ollama_provider: str,
         ollama_model: str,
+        trace_path: Path | None,
         started_at: float,
     ) -> None:
         super().__init__(server_address, request_handler_class)
@@ -142,6 +150,7 @@ class MosaRagServer(ThreadingHTTPServer):
         self.raw_query_default = raw_query_default
         self.ollama_provider = ollama_provider
         self.ollama_model = ollama_model
+        self.trace_path = trace_path
         self.started_at = started_at
 
 
@@ -171,6 +180,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                 "embedding_model": self.server.retriever.model_name,
                 "ollama_provider": self.server.ollama_provider or None,
                 "ollama_model": self.server.ollama_model,
+                "trace_path": str(self.server.trace_path) if self.server.trace_path else None,
                 "uptime_seconds": round(time.time() - self.server.started_at, 3),
             }
             self._write_json(HTTPStatus.OK, payload)
@@ -263,6 +273,12 @@ class RequestHandler(BaseHTTPRequestHandler):
 
         if confidence.should_abstain and not allow_low_confidence:
             verification = self.server.retriever.verify_answer("", [])
+            validation = validate_answer(
+                confidence=confidence,
+                verification=verification,
+                answer_mode="abstain",
+                abstained=True,
+            )
             payload = {
                 "query": query,
                 "top_k": top_k,
@@ -272,26 +288,25 @@ class RequestHandler(BaseHTTPRequestHandler):
                 "answer_mode": "abstain",
                 "answer": "The retrieved records do not clearly answer this question.",
                 "verification": asdict(verification),
-                "validation": asdict(
-                    validate_answer(
-                        confidence=confidence,
-                        verification=verification,
-                        answer_mode="abstain",
-                        abstained=True,
-                    )
-                ),
+                "validation": asdict(validation),
                 "retrieval_confidence": asdict(confidence),
                 "results": [asdict(hit) for hit in self.server.retriever.serialize_results(results)],
             }
             if show_context:
                 payload["context"] = prompt_context
                 payload["display_context"] = display_context
-            self._write_json(HTTPStatus.OK, payload)
+            self._write_answer_payload(payload)
             return
 
         if not self.server.ollama_provider:
             answer = self.server.retriever.build_extractive_answer(results)
             verification = self.server.retriever.verify_answer(answer, results)
+            validation = validate_answer(
+                confidence=confidence,
+                verification=verification,
+                answer_mode="extractive",
+                abstained=False,
+            )
             payload = {
                 "query": query,
                 "top_k": top_k,
@@ -301,21 +316,14 @@ class RequestHandler(BaseHTTPRequestHandler):
                 "answer_mode": "extractive",
                 "answer": answer,
                 "verification": asdict(verification),
-                "validation": asdict(
-                    validate_answer(
-                        confidence=confidence,
-                        verification=verification,
-                        answer_mode="extractive",
-                        abstained=False,
-                    )
-                ),
+                "validation": asdict(validation),
                 "retrieval_confidence": asdict(confidence),
                 "results": [asdict(hit) for hit in self.server.retriever.serialize_results(results)],
             }
             if show_context:
                 payload["context"] = prompt_context
                 payload["display_context"] = display_context
-            self._write_json(HTTPStatus.OK, payload)
+            self._write_answer_payload(payload)
             return
 
         try:
@@ -325,6 +333,12 @@ class RequestHandler(BaseHTTPRequestHandler):
             return
 
         verification = self.server.retriever.verify_answer(answer, results)
+        validation = validate_answer(
+            confidence=confidence,
+            verification=verification,
+            answer_mode="llm",
+            abstained=False,
+        )
         payload = {
             "query": query,
             "top_k": top_k,
@@ -334,20 +348,32 @@ class RequestHandler(BaseHTTPRequestHandler):
             "answer_mode": "llm",
             "answer": answer,
             "verification": asdict(verification),
-            "validation": asdict(
-                validate_answer(
-                    confidence=confidence,
-                    verification=verification,
-                    answer_mode="llm",
-                    abstained=False,
-                )
-            ),
+            "validation": asdict(validation),
             "retrieval_confidence": asdict(confidence),
             "results": [asdict(hit) for hit in self.server.retriever.serialize_results(results)],
         }
         if show_context:
             payload["context"] = prompt_context
             payload["display_context"] = display_context
+        self._write_answer_payload(payload)
+
+    def _write_answer_payload(self, payload: dict) -> None:
+        append_jsonl(
+            self.server.trace_path,
+            build_answer_trace(
+                route="/answer",
+                query=str(payload["query"]),
+                top_k=int(payload["top_k"]),
+                raw_query=bool(payload["raw_query"]),
+                answer_mode=str(payload["answer_mode"]),
+                validation=payload["validation"],
+                retrieval_confidence=payload["retrieval_confidence"],
+                abstained=bool(payload["abstained"]),
+                verification=payload["verification"],
+                latency_ms=float(payload["latency_ms"]),
+                results=payload["results"],
+            ),
+        )
         self._write_json(HTTPStatus.OK, payload)
 
     def _handle_answer_stream(
@@ -494,6 +520,7 @@ def main() -> None:
         raw_query_default=args.raw_query_default,
         ollama_provider=args.ollama_provider.strip(),
         ollama_model=args.ollama_model,
+        trace_path=args.trace_path,
         started_at=started_at,
     )
     print(
