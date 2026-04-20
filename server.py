@@ -15,6 +15,7 @@ from pydantic import BaseModel
 
 from mosa_rag.llm import call_llm
 from mosa_rag.runtime import ANSWER_TOP_K_DEFAULT, ResidentRetriever
+from mosa_rag.validation_agent import validate_answer
 from serve_mosa_rag import MAX_QUERY_CHARS, MAX_TOP_K
 
 logging.basicConfig(level=logging.INFO)
@@ -68,6 +69,7 @@ class ChatResponse(BaseModel):
     answer_mode: str = "llm"
     confidence: dict | None = None
     verification: dict | None = None
+    validation: dict | None = None
     abstained: bool = False
 
 
@@ -88,21 +90,39 @@ def chat(req: ChatRequest) -> ChatResponse:
 
         if confidence.should_abstain:
             logger.info("Abstaining — confidence level=%s score=%.4f", confidence.level, confidence.score)
+            verification = _retriever.verify_answer("", [])
             return ChatResponse(
                 response="The retrieved records don't clearly answer this question.",
                 answer_mode="abstain",
                 confidence=asdict(confidence),
-                verification=asdict(_retriever.verify_answer("", [])),
+                verification=asdict(verification),
+                validation=asdict(
+                    validate_answer(
+                        confidence=confidence,
+                        verification=verification,
+                        answer_mode="abstain",
+                        abstained=True,
+                    )
+                ),
                 abstained=True,
             )
 
         if not os.getenv("OLLAMA_PROVIDER", "").strip():
             answer = _retriever.build_extractive_answer(_results)
+            verification = _retriever.verify_answer(answer, _results)
             return ChatResponse(
                 response=answer,
                 answer_mode="extractive",
                 confidence=asdict(confidence),
-                verification=asdict(_retriever.verify_answer(answer, _results)),
+                verification=asdict(verification),
+                validation=asdict(
+                    validate_answer(
+                        confidence=confidence,
+                        verification=verification,
+                        answer_mode="extractive",
+                        abstained=False,
+                    )
+                ),
             )
 
         logger.info("Calling Ollama (confidence level=%s score=%.4f) ...", confidence.level, confidence.score)
@@ -112,11 +132,20 @@ def chat(req: ChatRequest) -> ChatResponse:
         if not answer:
             raise HTTPException(status_code=502, detail="Empty response from model")
 
+        verification = _retriever.verify_answer(answer, _results)
         return ChatResponse(
             response=answer,
             answer_mode="llm",
             confidence=asdict(confidence),
-            verification=asdict(_retriever.verify_answer(answer, _results)),
+            verification=asdict(verification),
+            validation=asdict(
+                validate_answer(
+                    confidence=confidence,
+                    verification=verification,
+                    answer_mode="llm",
+                    abstained=False,
+                )
+            ),
         )
 
     except HTTPException:

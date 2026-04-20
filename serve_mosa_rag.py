@@ -16,6 +16,7 @@ from urllib.parse import urlparse
 
 from mosa_rag.llm import DEFAULT_OLLAMA_MODEL, OLLAMA_LOCAL, OLLAMA_REMOTE, call_llm, stream_llm
 from mosa_rag.runtime import ANSWER_TOP_K_DEFAULT, ResidentRetriever
+from mosa_rag.validation_agent import validate_answer
 from retrieve_pdf import MODEL_NAME
 
 MAX_QUERY_CHARS = 1000
@@ -261,6 +262,7 @@ class RequestHandler(BaseHTTPRequestHandler):
             return
 
         if confidence.should_abstain and not allow_low_confidence:
+            verification = self.server.retriever.verify_answer("", [])
             payload = {
                 "query": query,
                 "top_k": top_k,
@@ -269,7 +271,15 @@ class RequestHandler(BaseHTTPRequestHandler):
                 "abstained": True,
                 "answer_mode": "abstain",
                 "answer": "The retrieved records do not clearly answer this question.",
-                "verification": asdict(self.server.retriever.verify_answer("", [])),
+                "verification": asdict(verification),
+                "validation": asdict(
+                    validate_answer(
+                        confidence=confidence,
+                        verification=verification,
+                        answer_mode="abstain",
+                        abstained=True,
+                    )
+                ),
                 "retrieval_confidence": asdict(confidence),
                 "results": [asdict(hit) for hit in self.server.retriever.serialize_results(results)],
             }
@@ -281,6 +291,7 @@ class RequestHandler(BaseHTTPRequestHandler):
 
         if not self.server.ollama_provider:
             answer = self.server.retriever.build_extractive_answer(results)
+            verification = self.server.retriever.verify_answer(answer, results)
             payload = {
                 "query": query,
                 "top_k": top_k,
@@ -289,7 +300,15 @@ class RequestHandler(BaseHTTPRequestHandler):
                 "abstained": False,
                 "answer_mode": "extractive",
                 "answer": answer,
-                "verification": asdict(self.server.retriever.verify_answer(answer, results)),
+                "verification": asdict(verification),
+                "validation": asdict(
+                    validate_answer(
+                        confidence=confidence,
+                        verification=verification,
+                        answer_mode="extractive",
+                        abstained=False,
+                    )
+                ),
                 "retrieval_confidence": asdict(confidence),
                 "results": [asdict(hit) for hit in self.server.retriever.serialize_results(results)],
             }
@@ -305,6 +324,7 @@ class RequestHandler(BaseHTTPRequestHandler):
             self._write_json(HTTPStatus.BAD_GATEWAY, {"error": str(exc)})
             return
 
+        verification = self.server.retriever.verify_answer(answer, results)
         payload = {
             "query": query,
             "top_k": top_k,
@@ -313,7 +333,15 @@ class RequestHandler(BaseHTTPRequestHandler):
             "abstained": False,
             "answer_mode": "llm",
             "answer": answer,
-            "verification": asdict(self.server.retriever.verify_answer(answer, results)),
+            "verification": asdict(verification),
+            "validation": asdict(
+                validate_answer(
+                    confidence=confidence,
+                    verification=verification,
+                    answer_mode="llm",
+                    abstained=False,
+                )
+            ),
             "retrieval_confidence": asdict(confidence),
             "results": [asdict(hit) for hit in self.server.retriever.serialize_results(results)],
         }

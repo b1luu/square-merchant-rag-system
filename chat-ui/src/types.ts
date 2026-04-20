@@ -27,6 +27,14 @@ export interface AnswerVerification {
   unsupported_sentences: string[];
 }
 
+export interface ValidationDecision {
+  decision: 'show' | 'warn' | 'abstain';
+  reasons: string[];
+  answer_mode: 'llm' | 'extractive' | 'abstain';
+  confidence_level: 'low' | 'medium' | 'high';
+  unsupported_sentences: string[];
+}
+
 export interface HealthResponse {
   status: string;
   records: number;
@@ -46,6 +54,7 @@ export interface AnswerResponse {
   abstained: boolean;
   answer_mode?: 'llm' | 'extractive' | 'abstain';
   verification?: AnswerVerification;
+  validation?: ValidationDecision;
   retrieval_confidence: RetrievalConfidence;
   results: RetrievedRecord[];
 }
@@ -57,6 +66,7 @@ export interface AssistantMeta {
   latencyMs: number;
   confidence: RetrievalConfidence;
   verification?: AnswerVerification;
+  validation?: ValidationDecision;
   results: RetrievedRecord[];
 }
 

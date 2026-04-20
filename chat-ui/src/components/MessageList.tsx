@@ -37,6 +37,16 @@ function verificationClass(supported: boolean): string {
     : 'border-rose-200 bg-rose-50 text-rose-700';
 }
 
+function validationClass(decision: 'show' | 'warn' | 'abstain'): string {
+  if (decision === 'show') {
+    return 'border-emerald-200 bg-emerald-50 text-emerald-800';
+  }
+  if (decision === 'warn') {
+    return 'border-amber-200 bg-amber-50 text-amber-800';
+  }
+  return 'border-rose-200 bg-rose-50 text-rose-700';
+}
+
 function SourceList({ results }: { results: RetrievedRecord[] }) {
   if (!results.length) {
     return null;
@@ -177,6 +187,15 @@ export default function MessageList({
                     {msg.meta.answerMode === 'extractive' ? (
                       <span className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-medium text-sky-800">
                         extractive fallback
+                      </span>
+                    ) : null}
+                    {msg.meta.validation ? (
+                      <span
+                        className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium ${validationClass(
+                          msg.meta.validation.decision
+                        )}`}
+                      >
+                        validator: {msg.meta.validation.decision}
                       </span>
                     ) : null}
                     {msg.meta.verification ? (
