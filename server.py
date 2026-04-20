@@ -52,6 +52,7 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     response: str
     confidence: dict | None = None
+    verification: dict | None = None
     abstained: bool = False
 
 
@@ -73,6 +74,7 @@ def chat(req: ChatRequest) -> ChatResponse:
             return ChatResponse(
                 response="The retrieved records don't clearly answer this question.",
                 confidence=asdict(confidence),
+                verification=asdict(_retriever.verify_answer("", [])),
                 abstained=True,
             )
 
@@ -83,7 +85,11 @@ def chat(req: ChatRequest) -> ChatResponse:
         if not answer:
             raise HTTPException(status_code=502, detail="Empty response from model")
 
-        return ChatResponse(response=answer, confidence=asdict(confidence))
+        return ChatResponse(
+            response=answer,
+            confidence=asdict(confidence),
+            verification=asdict(_retriever.verify_answer(answer, _results)),
+        )
 
     except HTTPException:
         raise

@@ -20,6 +20,13 @@ export interface RetrievedRecord {
   retrieval_text: string;
 }
 
+export interface AnswerVerification {
+  supported: boolean;
+  coverage_score: number;
+  checked_sentences: number;
+  unsupported_sentences: string[];
+}
+
 export interface HealthResponse {
   status: string;
   records: number;
@@ -37,6 +44,7 @@ export interface AnswerResponse {
   latency_ms: number;
   answer: string;
   abstained: boolean;
+  verification?: AnswerVerification;
   retrieval_confidence: RetrievalConfidence;
   results: RetrievedRecord[];
 }
@@ -46,6 +54,7 @@ export interface AssistantMeta {
   abstained: boolean;
   latencyMs: number;
   confidence: RetrievalConfidence;
+  verification?: AnswerVerification;
   results: RetrievedRecord[];
 }
 

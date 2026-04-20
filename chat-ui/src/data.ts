@@ -68,6 +68,7 @@ export function createAssistantMessage(response: AnswerResponse): AssistantMessa
       abstained: response.abstained,
       latencyMs: response.latency_ms,
       confidence: response.retrieval_confidence,
+      verification: response.verification,
       results: response.results,
     },
     retryableLowConfidence: response.abstained,

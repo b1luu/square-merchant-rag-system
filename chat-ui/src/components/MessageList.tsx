@@ -31,6 +31,12 @@ function confidenceClass(level: 'low' | 'medium' | 'high'): string {
   return 'border-rose-200 bg-rose-50 text-rose-700';
 }
 
+function verificationClass(supported: boolean): string {
+  return supported
+    ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+    : 'border-rose-200 bg-rose-50 text-rose-700';
+}
+
 function SourceList({ results }: { results: RetrievedRecord[] }) {
   if (!results.length) {
     return null;
@@ -168,6 +174,15 @@ export default function MessageList({
                         abstained
                       </span>
                     ) : null}
+                    {msg.meta.verification ? (
+                      <span
+                        className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium ${verificationClass(
+                          msg.meta.verification.supported
+                        )}`}
+                      >
+                        {msg.meta.verification.supported ? 'verified' : 'unsupported details'}
+                      </span>
+                    ) : null}
                   </div>
 
                   {msg.meta.confidence.reasons.length ? (
@@ -178,6 +193,17 @@ export default function MessageList({
                         </li>
                       ))}
                     </ul>
+                  ) : null}
+
+                  {msg.meta.verification?.unsupported_sentences.length ? (
+                    <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+                      <p className="font-semibold">Unsupported generated details</p>
+                      <ul className="mt-2 space-y-2">
+                        {msg.meta.verification.unsupported_sentences.map((sentence) => (
+                          <li key={sentence}>{sentence}</li>
+                        ))}
+                      </ul>
+                    </div>
                   ) : null}
 
                   <SourceList results={msg.meta.results} />

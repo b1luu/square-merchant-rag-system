@@ -211,6 +211,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                 "latency_ms": round((time.time() - started) * 1000, 2),
                 "abstained": True,
                 "answer": "The retrieved records do not clearly answer this question.",
+                "verification": asdict(self.server.retriever.verify_answer("", [])),
                 "retrieval_confidence": asdict(confidence),
                 "results": [asdict(hit) for hit in self.server.retriever.serialize_results(results)],
             }
@@ -245,6 +246,7 @@ class RequestHandler(BaseHTTPRequestHandler):
             "latency_ms": round((time.time() - started) * 1000, 2),
             "abstained": False,
             "answer": answer,
+            "verification": asdict(self.server.retriever.verify_answer(answer, results)),
             "retrieval_confidence": asdict(confidence),
             "results": [asdict(hit) for hit in self.server.retriever.serialize_results(results)],
         }

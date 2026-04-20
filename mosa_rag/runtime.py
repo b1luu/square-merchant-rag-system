@@ -10,6 +10,7 @@ from pathlib import Path
 
 from mosa_rag.faiss_cache import default_cache_root, load_or_build_faiss_index
 from mosa_rag.retrieve_jsonl import build_chunks, load_rows
+from mosa_rag.verification import AnswerVerification, verify_answer_support
 from retrieve_pdf import MODEL_NAME, Chunk, retrieve
 
 ANSWER_TOP_K_DEFAULT = 2
@@ -401,3 +402,18 @@ class ResidentRetriever:
                 )
             )
         return payload
+
+    def verify_answer(
+        self,
+        answer: str,
+        results: list[tuple[float, Chunk]],
+    ) -> AnswerVerification:
+        evidence_texts: list[str] = []
+        for _, chunk in results:
+            record = self.rows[chunk.chunk_id]
+            evidence_texts.extend(
+                str(record.get(field, ""))
+                for field in ("title", "type", "retrieval_text", "rules", "steps", "ingredients", "action")
+                if record.get(field)
+            )
+        return verify_answer_support(answer, evidence_texts)
