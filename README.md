@@ -1,4 +1,4 @@
-# Mosa Ops RAG System
+# Store Specific Ops RAG System
 
 ## Overview
 
